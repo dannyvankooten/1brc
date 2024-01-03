@@ -1,0 +1,12 @@
+bin/
+perf.data*
+a.out
+hash
+naive
+analyze
+*.txt
+
+# playing with hash functions
+hash.c
+hashes.txt
+
