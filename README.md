@@ -25,9 +25,9 @@ This will create a 12 GB file with 1B rows named `measurements.txt` in your curr
 ### Run the challenge:
 
 ```
-time bin/analyze measurements.txt
+time bin/analyze measurements.txt >/dev/null
 
-real    0m29.071s
-user    0m23.790s
-sys     0m2.962s
+real    0m4.464s
+user    0m34.472s
+sys     0m6.938s
 ```
