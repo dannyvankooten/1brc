@@ -1,6 +1,5 @@
-CFLAGS+=-g -O2 -march=native -Wall -Wextra -Wpedantic -std=c99 -Wformat=2 -Wconversion -Wtrampolines \
--Wimplicit-fallthrough -D_XOPEN_SOURCE=500
-LIBS+=-lm
+CFLAGS+=-O2 -march=native -std=c99 -Wall -Wextra -Wpedantic \
+-Wformat=2 -Wconversion -Wtrampolines -Wimplicit-fallthrough
 
 all: bin/ bin/create-sample bin/analyze
 
@@ -12,10 +11,10 @@ profile: bin/analyze
 	perf record --call-graph dwarf bin/analyze measurements-1M.txt
 
 bin/create-sample: create-sample.c
-	$(CC) $(CFLAGS) $^ $(LIBS) -o $@
+	$(CC) $(CFLAGS) $^ -lm -o $@
 
 bin/analyze: analyze.c
-	$(CC) $(CFLAGS) $^ $(LIBS) -o $@
+	$(CC) $(CFLAGS) $^ -o $@
 
 .PHONY: clean
 clean:

@@ -4,7 +4,7 @@ https://www.morling.dev/blog/one-billion-row-challenge/
 
 The challenge: compute simple floating-point math over 1 billion rows. As fast as possible, without dependencies.
 
-Implemented in standard C99 with no concurrency or SIMD.
+Implemented in standard C99 with POSIX threads (however, no SIMD).
 
 ## Running the challenge
 
@@ -27,7 +27,7 @@ This will create a 12 GB file with 1B rows named `measurements.txt` in your curr
 ```
 time bin/analyze measurements.txt >/dev/null
 
-real    0m4.464s
-user    0m34.472s
-sys     0m6.938s
+real    0m3.598s
+user    0m34.354s
+sys     0m8.663s
 ```

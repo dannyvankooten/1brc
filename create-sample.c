@@ -424,11 +424,8 @@ struct {
     {"Zanzibar City", 26.0},
     {"Zürich", 9.3},
 };
-unsigned int hash(char *name) {
-  return (unsigned int)(name[0] - 'A') * 10000 +
-         (unsigned int)(name[1] - 'a') * 100 + (unsigned int)(name[2] - 'a');
-}
-double rand_normal_distribute(double mean, double stddev) {
+
+double rand_nd(double mean, double stddev) {
   static double U, V;
   static int phase = 0;
   double Z;
@@ -463,7 +460,7 @@ int main(int argc, char **argv) {
   int ncities = sizeof(data) / sizeof(data[0]);
   for (int i = 0; i < n; i++) {
     int c = rand() % ncities;
-    double measurement = rand_normal_distribute(data[c].mean, 10);
+    double measurement = rand_nd(data[c].mean, 10);
     fprintf(fh, "%s;%.1f\n", data[c].city, measurement);
   }
 

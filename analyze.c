@@ -8,14 +8,17 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define HCAP 1987
+// Capacity of our hashmap
+// Since we use linear probing this needs to be at least twice as big
+// As the # of distinct strings in our dataset
+// Also must be power of 2 so we can use bit-and instead of modulo
+#define HCAP (4096*2)
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
 static inline void parse_number(int *dest, char *s, char **endptr) {
   char mod = 1;
   int n = 0;
-  int d = 0;
 
   // parse sign
   if (*s == '-') {
@@ -33,18 +36,18 @@ static inline void parse_number(int *dest, char *s, char **endptr) {
 
   // parse mantissa
   while (*s >= '0' && *s <= '9') {
-    d = (d * 10) + (*s++ - '0');
+    n = (n * 10) + (*s++ - '0');
   }
 
-  *dest = mod * n * 10 + d;
+  *dest = mod * n;
   *endptr = s;
 }
 
 // hash returns the fnv-1a hash of the first n bytes in data
-static inline unsigned int hash(const unsigned char *data, size_t n) {
+static inline unsigned int hash(const unsigned char *data, int n) {
   unsigned int hash = 0;
 
-  for (size_t i = 0; i < n; data++, i++) {
+  for (int i = 0; i < n; data++, i++) {
     hash *= 0x811C9DC5; // prime
     hash ^= (*data);
   }
@@ -55,17 +58,13 @@ static inline unsigned int hash(const unsigned char *data, size_t n) {
 struct Group {
   unsigned int count;
   int sum, min, max;
-  char *city;
+  char *label;
 };
 
-// cmp compares the city property of the result that both pointers point
-static inline int cmp(const void *ptr_a, const void *ptr_b) {
-  return strcmp(((struct Group *)ptr_a)->city, ((struct Group *)ptr_b)->city);
-}
-
-struct ResultSet {
+struct Result {
   char labels[420][32];
   struct Group groups[420];
+  int map[HCAP];
   int n;
 };
 
@@ -73,8 +72,25 @@ struct Chunk {
   char *data;
   size_t start;
   size_t end;
-  struct ResultSet result;
 };
+
+// cmp compares the city property of the result that both pointers point
+static inline int cmp(const void *ptr_a, const void *ptr_b) {
+  return strcmp(((struct Group *)ptr_a)->label, ((struct Group *)ptr_b)->label);
+}
+
+static inline unsigned int hash_probe(int map[HCAP], char groups[420][32],
+                                      const char *start, int len) {
+  // probe map until free spot or match
+  unsigned int h = hash((unsigned char *)start, len) & (HCAP-1);
+  while (map[h] >= 0 && memcmp(groups[map[h]], start, (size_t) len) != 0) {
+    if (h++ == HCAP) {
+      h = 0;
+    }
+  }
+
+  return h;
+}
 
 static void *process_chunk(void *data) {
   struct Chunk *ch = (struct Chunk *)data;
@@ -90,50 +106,46 @@ static void *process_chunk(void *data) {
     ch->end++;
   }
 
+  struct Result *result = malloc(sizeof(*result));
+  result->n = 0;
+
   // initialize hashmap
   // will hold indexes into our cities and results array
-  int map[HCAP];
-  memset(map, -1, HCAP * sizeof(int));
+  memset(result->map, -1, HCAP * sizeof(int));
 
   char *s = &ch->data[ch->start];
   char *start, *pos;
   unsigned int h;
   int measurement;
-  size_t len;
+  int len;
   int c;
 
   while (1) {
     start = s;
     pos = strchr(s, ';');
-    len = (size_t)(pos - start);
+    len = (int)(pos - start);
     parse_number(&measurement, pos + 1, &s);
 
     // probe map until free spot or match
-    h = hash((unsigned char *)start, len) % HCAP;
-    c = map[h];
-    while (c >= 0 && memcmp(ch->result.labels[c], start, len) != 0) {
-      if (h++ == HCAP) {
-        h = 0;
-      }
-      c = map[h];
-    }
+    h = hash_probe(result->map, result->labels, start, len);
+    c = result->map[h];
 
     if (c < 0) {
-      memcpy(ch->result.labels[ch->result.n], start, len);
-      ch->result.labels[ch->result.n][len] = 0x0;
-      ch->result.groups[ch->result.n].city = ch->result.labels[ch->result.n];
-      ch->result.groups[ch->result.n].count = 1;
-      ch->result.groups[ch->result.n].sum = measurement;
-      ch->result.groups[ch->result.n].min = measurement;
-      ch->result.groups[ch->result.n].max = measurement;
-      map[h] = ch->result.n++;
+      memcpy(result->labels[result->n], start, (size_t) len);
+      result->labels[result->n][len] = 0x0;
+      result->groups[result->n].label = result->labels[result->n];
+      result->groups[result->n].count = 1;
+      result->groups[result->n].sum = measurement;
+      result->groups[result->n].min = measurement;
+      result->groups[result->n].max = measurement;
+      result->map[h] = result->n++;
     } else {
-      ch->result.groups[c].count += 1;
-      ch->result.groups[c].sum += measurement;
-      if (measurement < ch->result.groups[c].min) {
-        ch->result.groups[c].min = measurement;
-      } else if (measurement > ch->result.groups[c].max) {
-        ch->result.groups[c].max = measurement;
+      result->groups[c].count += 1;
+      result->groups[c].sum += measurement;
+      if (measurement < result->groups[c].min) {
+        result->groups[c].min = measurement;
+      } else if (measurement > result->groups[c].max) {
+        result->groups[c].max = measurement;
       }
     }
 
@@ -144,7 +156,31 @@ static void *process_chunk(void *data) {
     }
   }
 
-  return (void *)ch;
+  return (void *)result;
+}
+
+void result_to_str(char *dest, const struct Result *result) {
+  char buf[128];
+  *dest++ = '{';
+  for (int i = 0; i < result->n; i++) {
+    size_t n = (size_t)sprintf(
+        buf, "%s=%.1f/%.1f/%.1f", result->groups[i].label,
+        (float)result->groups[i].min / 10.0,
+        ((float)result->groups[i].sum / (float)result->groups[i].count) / 10.0,
+        (float)result->groups[i].max / 10.0);
+
+    // copy buf to output
+    memcpy(dest, buf, n);
+
+    if (i < result->n - 1) {
+      memcpy(dest + n, ", ", 2);
+      n += 2;
+    }
+
+    dest += n;
+  }
+  *dest++ = '}';
+  *dest = 0x0;
 }
 
 int main(int argc, char **argv) {
@@ -174,11 +210,10 @@ int main(int argc, char **argv) {
   }
 
   // distribute work among N worker threads
-  const int nworkers = 12;
+  const int nworkers = 8;
   pthread_t workers[nworkers];
   struct Chunk chunks[nworkers];
   for (int i = 0; i < nworkers; i++) {
-    chunks[i].result.n = 0;
     chunks[i].data = data;
     chunks[i].start = sz / (size_t)nworkers * (size_t)i;
     chunks[i].end = sz / (size_t)nworkers * ((size_t)i + 1);
@@ -186,61 +221,53 @@ int main(int argc, char **argv) {
   }
 
   // wait for all threads to finish
+  struct Result *results[nworkers];
   for (int i = 0; i < nworkers; i++) {
-    pthread_join(workers[i], NULL);
+    pthread_join(workers[i], (void *)&results[i]);
   }
 
   // merge results
-  struct ResultSet result = chunks[0].result;
+  struct Result *result = results[0];
   for (int i = 1; i < nworkers; i++) {
-    for (int j = 0; j < chunks[i].result.n; j++) {
-      // get index of label
-      for (int k = 0; k < result.n; k++) {
-        if (strcmp(result.labels[k], chunks[i].result.labels[j]) == 0) {
-          result.groups[k].count += chunks[i].result.groups[j].count;
-          result.groups[k].sum += chunks[i].result.groups[j].sum;
-          if (chunks[i].result.groups[j].min < result.groups[k].min) {
-            result.groups[k].min = chunks[i].result.groups[j].min;
-          }
-          if (chunks[i].result.groups[j].max < result.groups[k].max) {
-            result.groups[k].max = chunks[i].result.groups[j].max;
-          }
-          break;
+    for (int j = 0; j < results[i]->n; j++) {
+      struct Group *b = &results[i]->groups[j];
+      char *label = results[i]->labels[j];
+      unsigned int h =
+          hash_probe(result->map, result->labels, label, (int) strlen(label));
+
+      // TODO: Refactor lines below, we can share some logic with process_chunk
+      int c = result->map[h];
+      if (c >= 0) {
+        result->groups[c].count += b->count;
+        result->groups[c].sum += b->sum;
+        if (b->min < result->groups[c].min) {
+          result->groups[c].min = b->min;
         }
+        if (b->max > result->groups[c].max) {
+          result->groups[c].max = b->max;
+        }
+      } else {
+        memcpy(&result->groups[result->n], b, sizeof(*b));
+        strcpy(result->labels[result->n], label);
+        result->groups[result->n].label = result->labels[result->n];
+        result->map[h] = result->n++;
       }
     }
   }
 
   // sort results alphabetically
-  qsort(result.groups, (size_t)result.n, sizeof(struct Group), cmp);
+  qsort(result->groups, (size_t)result->n, sizeof(struct Group), cmp);
 
   // prepare output string
-  char buf[128];
-  char output[1 << 14];
-  char *s = output;
-  *s++ = '{';
-  for (int i = 0; i < result.n; i++) {
-    size_t n = (size_t)sprintf(
-        buf, "%s=%.1f/%.1f/%.1f", result.groups[i].city,
-        (float)result.groups[i].min / 10.0,
-        ((float)result.groups[i].sum / (float)result.groups[i].count) / 10.0,
-        (float)result.groups[i].max / 10.0);
+  char buf[(1 << 10) * 16];
+  result_to_str(buf, result);
+  puts(buf);
 
-    // copy buf to output
-    memcpy(s, buf, n);
-
-    if (i < result.n - 1) {
-      memcpy(s + n, ", ", 2);
-      n += 2;
-    }
-
-    s += n;
-  }
-  *s++ = '}';
-  *s = 0x0;
-  puts(output);
-
+  // clean-up
   munmap(data, sz);
   close(fd);
+  for (int i = 0; i < nworkers; i++) {
+    free(results[i]);
+  }
   exit(EXIT_SUCCESS);
 }
