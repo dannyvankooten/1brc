@@ -1,4 +1,4 @@
-CFLAGS+=-O2 -march=native -std=c99 -Wall -Wextra -Wpedantic \
+CFLAGS+=-O2 -march=native -Wall -Wextra -Wpedantic \
 -Wformat=2 -Wconversion -Wtrampolines -Wimplicit-fallthrough
 
 all: bin/ bin/create-sample bin/analyze

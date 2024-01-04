@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -5,51 +6,52 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 // Capacity of our hashmap
 // Since we use linear probing this needs to be at least twice as big
-// As the # of distinct strings in our dataset
+// as the # of distinct strings in our dataset
 // Also must be power of 2 so we can use bit-and instead of modulo
-#define HCAP (4096*2)
+#define HCAP 1024
+#define MAX_DISTINCT_GROUPS 512
+#define MAX_GROUPBY_KEY_LENGTH 100
+#define NTHREADS 8
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-static inline void parse_number(int *dest, char *s, char **endptr) {
-  char mod = 1;
+static void parse_number(int *dest, char *s, char **endptr) {
   int n = 0;
 
   // parse sign
-  if (*s == '-') {
-    mod = -1;
+  char mod = (*s == '-') ? -1 : 1;
+  if (mod < 0) {
     s++;
   }
 
   // parse characteristic
-  while (*s >= '0' && *s <= '9') {
+  while (isdigit(*s)) {
     n = (n * 10) + (*s++ - '0');
   }
 
   // skip separator
   s++;
 
-  // parse mantissa
-  while (*s >= '0' && *s <= '9') {
-    n = (n * 10) + (*s++ - '0');
-  }
+  // parse mantissa (we know this to be a single decimal)
+  n = (n * 10) + (*s++ - '0');
 
   *dest = mod * n;
   *endptr = s;
 }
 
 // hash returns the fnv-1a hash of the first n bytes in data
-static inline unsigned int hash(const unsigned char *data, int n) {
+static unsigned int hash(const unsigned char *data, int n) {
   unsigned int hash = 0;
 
-  for (int i = 0; i < n; data++, i++) {
-    hash *= 0x811C9DC5; // prime
-    hash ^= (*data);
+  for (int i = 0; i < n; i++) {
+    hash *= 0x811C9DC5; // FNV prime
+    hash ^= data[i];
   }
 
   return hash;
@@ -62,28 +64,30 @@ struct Group {
 };
 
 struct Result {
-  char labels[420][32];
-  struct Group groups[420];
   int map[HCAP];
   int n;
+  char labels[MAX_DISTINCT_GROUPS][MAX_GROUPBY_KEY_LENGTH];
+  struct Group groups[MAX_DISTINCT_GROUPS];
 };
 
 struct Chunk {
-  char *data;
   size_t start;
   size_t end;
+  char *data;
 };
 
 // cmp compares the city property of the result that both pointers point
-static inline int cmp(const void *ptr_a, const void *ptr_b) {
+static int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct Group *)ptr_a)->label, ((struct Group *)ptr_b)->label);
 }
 
-static inline unsigned int hash_probe(int map[HCAP], char groups[420][32],
-                                      const char *start, int len) {
+static unsigned int
+hash_probe(int map[HCAP],
+           char groups[MAX_DISTINCT_GROUPS][MAX_GROUPBY_KEY_LENGTH],
+           const char *start, int len) {
   // probe map until free spot or match
-  unsigned int h = hash((unsigned char *)start, len) & (HCAP-1);
-  while (map[h] >= 0 && memcmp(groups[map[h]], start, (size_t) len) != 0) {
+  unsigned int h = hash((unsigned char *)start, len) & (HCAP - 1);
+  while (map[h] >= 0 && memcmp(groups[map[h]], start, (size_t)len) != 0) {
     if (h++ == HCAP) {
       h = 0;
     }
@@ -92,8 +96,8 @@ static inline unsigned int hash_probe(int map[HCAP], char groups[420][32],
   return h;
 }
 
-static void *process_chunk(void *data) {
-  struct Chunk *ch = (struct Chunk *)data;
+static void *process_chunk(void *ptr) {
+  struct Chunk *ch = (struct Chunk *)ptr;
 
   // skip start forward until SOF or after next newline
   if (ch->start > 0) {
@@ -107,10 +111,13 @@ static void *process_chunk(void *data) {
   }
 
   struct Result *result = malloc(sizeof(*result));
+  if (!result) {
+    perror("malloc error");
+    exit(EXIT_FAILURE);
+  }
   result->n = 0;
-
-  // initialize hashmap
-  // will hold indexes into our cities and results array
+  memset(result->labels, 0,
+         MAX_DISTINCT_GROUPS * MAX_GROUPBY_KEY_LENGTH * sizeof(char));
   memset(result->map, -1, HCAP * sizeof(int));
 
   char *s = &ch->data[ch->start];
@@ -131,7 +138,7 @@ static void *process_chunk(void *data) {
     c = result->map[h];
 
     if (c < 0) {
-      memcpy(result->labels[result->n], start, (size_t) len);
+      memcpy(result->labels[result->n], start, (size_t)len);
       result->labels[result->n][len] = 0x0;
       result->groups[result->n].label = result->labels[result->n];
       result->groups[result->n].count = 1;
@@ -203,37 +210,37 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
-  if (!data || data == MAP_FAILED) {
+  char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
+  if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);
   }
 
   // distribute work among N worker threads
-  const int nworkers = 8;
-  pthread_t workers[nworkers];
-  struct Chunk chunks[nworkers];
-  for (int i = 0; i < nworkers; i++) {
+  pthread_t workers[NTHREADS];
+  struct Chunk chunks[NTHREADS];
+  size_t chunk_size = sz / (size_t)NTHREADS;
+  for (int i = 0; i < NTHREADS; i++) {
     chunks[i].data = data;
-    chunks[i].start = sz / (size_t)nworkers * (size_t)i;
-    chunks[i].end = sz / (size_t)nworkers * ((size_t)i + 1);
+    chunks[i].start = chunk_size * (size_t)i;
+    chunks[i].end = chunk_size * ((size_t)i + 1);
     pthread_create(&workers[i], NULL, process_chunk, &chunks[i]);
   }
 
   // wait for all threads to finish
-  struct Result *results[nworkers];
-  for (int i = 0; i < nworkers; i++) {
+  struct Result *results[NTHREADS];
+  for (int i = 0; i < NTHREADS; i++) {
     pthread_join(workers[i], (void *)&results[i]);
   }
 
   // merge results
   struct Result *result = results[0];
-  for (int i = 1; i < nworkers; i++) {
+  for (int i = 1; i < NTHREADS; i++) {
     for (int j = 0; j < results[i]->n; j++) {
       struct Group *b = &results[i]->groups[j];
       char *label = results[i]->labels[j];
       unsigned int h =
-          hash_probe(result->map, result->labels, label, (int) strlen(label));
+          hash_probe(result->map, result->labels, label, (int)strlen(label));
 
       // TODO: Refactor lines below, we can share some logic with process_chunk
       int c = result->map[h];
@@ -264,9 +271,9 @@ int main(int argc, char **argv) {
   puts(buf);
 
   // clean-up
-  munmap(data, sz);
+  // munmap(data, sz);
   close(fd);
-  for (int i = 0; i < nworkers; i++) {
+  for (int i = 0; i < NTHREADS; i++) {
     free(results[i]);
   }
   exit(EXIT_SUCCESS);
