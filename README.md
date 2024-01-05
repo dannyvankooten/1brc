@@ -31,3 +31,13 @@ real    0m3.598s
 user    0m34.354s
 sys     0m8.663s
 ```
+
+### Benchmarks
+
+Since I don't have access to a Hetzner CCX33 box, here are the reference times for the currently leading Java implementations from the official challenge when I run them on my machine.
+
+| # | Result (m:s.ms) | Implementation     | Language | Submitter     |
+|---|-----------------|--------------------|-----|---------------|
+| ?. |        00:03.598 | [link](https://github.com/dannyvankooten/1brc/blob/main/analyze.c)| C | [Danny van Kooten](https://github.com/dannyvankooten)|
+| 1.|        00:06.131 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
+| 2.|        00:06.421 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graalce   | [Roy van Rijn](https://github.com/royvanrijn)|
