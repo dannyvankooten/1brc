@@ -27,9 +27,9 @@ This will create a 12 GB file with 1B rows named `measurements.txt` in your curr
 ```
 time bin/analyze measurements.txt >/dev/null
 
-real    0m3.598s
-user    0m34.354s
-sys     0m8.663s
+real    0m3.142s
+user    0m35.151s
+sys     0m4.467s
 ```
 
 ### Benchmarks
@@ -38,6 +38,6 @@ Since I don't have access to a Hetzner CCX33 box, here are the reference times f
 
 | # | Result (m:s.ms) | Implementation     | Language | Submitter     |
 |---|-----------------|--------------------|-----|---------------|
-| ?. |        00:03.598 | [link](https://github.com/dannyvankooten/1brc/blob/main/analyze.c)| C | [Danny van Kooten](https://github.com/dannyvankooten)|
+| ?. |        00:03.142 | [link](https://github.com/dannyvankooten/1brc/blob/main/analyze.c)| C | [Danny van Kooten](https://github.com/dannyvankooten)|
 | 1.|        00:06.131 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
 | 2.|        00:06.421 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graalce   | [Roy van Rijn](https://github.com/royvanrijn)|

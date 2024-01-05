@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -14,10 +13,14 @@
 // Since we use linear probing this needs to be at least twice as big
 // as the # of distinct strings in our dataset
 // Also must be power of 2 so we can use bit-and instead of modulo
-#define HCAP 1024
+#define HCAP (512 * 2 * 2 * 2)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
-#define NTHREADS 8
+#define NTHREADS 64
+
+// branchless min/max of 2 integers
+static inline int min(int a, int b) { return a ^ ((b ^ a) & -(b < a)); }
+static inline int max(int a, int b) { return a ^ ((a ^ b) & -(a < b)); }
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
@@ -25,23 +28,21 @@ static void parse_number(int *dest, char *s, char **endptr) {
   int n = 0;
 
   // parse sign
-  char mod = (*s == '-') ? -1 : 1;
-  if (mod < 0) {
+  int mod = 1;
+  if (*s == '-') {
+    mod = -1;
     s++;
   }
 
-  // parse characteristic
-  while (isdigit(*s)) {
-    n = (n * 10) + (*s++ - '0');
+  if (*(s + 1) == '.') {
+    n = mod * ((*s - '0') * 10) + (*(s + 2) - '0');
+    s += 3;
+  } else {
+    n = mod * ((*s - '0') * 100) + ((*(s + 1) - '0') * 10) + (*(s + 3) - '0');
+    s += 4;
   }
 
-  // skip separator
-  s++;
-
-  // parse mantissa (we know this to be a single decimal)
-  n = (n * 10) + (*s++ - '0');
-
-  *dest = mod * n;
+  *dest = n;
   *endptr = s;
 }
 
@@ -50,8 +51,8 @@ static unsigned int hash(const unsigned char *data, int n) {
   unsigned int hash = 0;
 
   for (int i = 0; i < n; i++) {
-    hash *= 0x811C9DC5; // FNV prime
-    hash ^= data[i];
+    // hash *= 0x811C9DC5; // FNV prime
+    hash = (hash * 31) + data[i];
   }
 
   return hash;
@@ -88,9 +89,7 @@ hash_probe(int map[HCAP],
   // probe map until free spot or match
   unsigned int h = hash((unsigned char *)start, len) & (HCAP - 1);
   while (map[h] >= 0 && memcmp(groups[map[h]], start, (size_t)len) != 0) {
-    if (h++ == HCAP) {
-      h = 0;
-    }
+    h = (h + 1) & (HCAP - 1);
   }
 
   return h;
@@ -121,17 +120,18 @@ static void *process_chunk(void *ptr) {
   memset(result->map, -1, HCAP * sizeof(int));
 
   char *s = &ch->data[ch->start];
+  char *end = &ch->data[ch->end];
   char *start, *pos;
   unsigned int h;
-  int measurement;
+  int temperature;
   int len;
   int c;
 
-  while (1) {
+  while (s != end) {
     start = s;
     pos = strchr(s, ';');
     len = (int)(pos - start);
-    parse_number(&measurement, pos + 1, &s);
+    parse_number(&temperature, pos + 1, &s);
 
     // probe map until free spot or match
     h = hash_probe(result->map, result->labels, start, len);
@@ -142,25 +142,19 @@ static void *process_chunk(void *ptr) {
       result->labels[result->n][len] = 0x0;
       result->groups[result->n].label = result->labels[result->n];
       result->groups[result->n].count = 1;
-      result->groups[result->n].sum = measurement;
-      result->groups[result->n].min = measurement;
-      result->groups[result->n].max = measurement;
+      result->groups[result->n].sum = temperature;
+      result->groups[result->n].min = temperature;
+      result->groups[result->n].max = temperature;
       result->map[h] = result->n++;
     } else {
       result->groups[c].count += 1;
-      result->groups[c].sum += measurement;
-      if (measurement < result->groups[c].min) {
-        result->groups[c].min = measurement;
-      } else if (measurement > result->groups[c].max) {
-        result->groups[c].max = measurement;
-      }
+      result->groups[c].sum += temperature;
+      result->groups[c].min = min(result->groups[c].min, temperature);
+      result->groups[c].max = max(result->groups[c].max, temperature);
     }
 
     // skip newline
-    // break out of loop if EOF
-    if (*++s == 0x0 || s == &ch->data[ch->end]) {
-      break;
-    }
+    s++;
   }
 
   return (void *)result;
@@ -247,12 +241,8 @@ int main(int argc, char **argv) {
       if (c >= 0) {
         result->groups[c].count += b->count;
         result->groups[c].sum += b->sum;
-        if (b->min < result->groups[c].min) {
-          result->groups[c].min = b->min;
-        }
-        if (b->max > result->groups[c].max) {
-          result->groups[c].max = b->max;
-        }
+        result->groups[c].min = min(result->groups[c].min, b->min);
+        result->groups[c].max = max(result->groups[c].max, b->max);
       } else {
         memcpy(&result->groups[result->n], b, sizeof(*b));
         strcpy(result->labels[result->n], label);
@@ -271,7 +261,7 @@ int main(int argc, char **argv) {
   puts(buf);
 
   // clean-up
-  // munmap(data, sz);
+  munmap(data, sz);
   close(fd);
   for (int i = 0; i < NTHREADS; i++) {
     free(results[i]);
