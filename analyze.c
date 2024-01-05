@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -13,10 +14,10 @@
 // Since we use linear probing this needs to be at least twice as big
 // as the # of distinct strings in our dataset
 // Also must be power of 2 so we can use bit-and instead of modulo
-#define HCAP (512 * 2 * 2 * 2)
+#define HCAP (512 * 2 * 2)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
-#define NTHREADS 64
+#define NTHREADS 32
 
 // branchless min/max of 2 integers
 static inline int min(int a, int b) { return a ^ ((b ^ a) & -(b < a)); }
@@ -35,10 +36,10 @@ static void parse_number(int *dest, char *s, char **endptr) {
   }
 
   if (*(s + 1) == '.') {
-    n = mod * ((*s - '0') * 10) + (*(s + 2) - '0');
+    n = mod * (((s[0] - '0') * 10) + (s[2] - '0'));
     s += 3;
   } else {
-    n = mod * ((*s - '0') * 100) + ((*(s + 1) - '0') * 10) + (*(s + 3) - '0');
+    n = mod * ((s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[3] - '0'));
     s += 4;
   }
 
@@ -60,7 +61,9 @@ static unsigned int hash(const unsigned char *data, int n) {
 
 struct Group {
   unsigned int count;
-  int sum, min, max;
+  int sum;
+  int min;
+  int max;
   char *label;
 };
 
@@ -121,7 +124,8 @@ static void *process_chunk(void *ptr) {
 
   char *s = &ch->data[ch->start];
   char *end = &ch->data[ch->end];
-  char *start, *pos;
+  char *start;
+  char *sep;
   unsigned int h;
   int temperature;
   int len;
@@ -129,9 +133,9 @@ static void *process_chunk(void *ptr) {
 
   while (s != end) {
     start = s;
-    pos = strchr(s, ';');
-    len = (int)(pos - start);
-    parse_number(&temperature, pos + 1, &s);
+    sep = strchr(start + 2, ';');
+    len = (int)(sep - start);
+    parse_number(&temperature, sep + 1, &s);
 
     // probe map until free spot or match
     h = hash_probe(result->map, result->labels, start, len);
@@ -204,7 +208,7 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
+  char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
   if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);
@@ -244,8 +248,12 @@ int main(int argc, char **argv) {
         result->groups[c].min = min(result->groups[c].min, b->min);
         result->groups[c].max = max(result->groups[c].max, b->max);
       } else {
-        memcpy(&result->groups[result->n], b, sizeof(*b));
+        // memcpy(&result->groups[result->n], b, sizeof(*b));
         strcpy(result->labels[result->n], label);
+        result->groups[result->n].count = b->count;
+        result->groups[result->n].sum = b->sum;
+        result->groups[result->n].min = b->min;
+        result->groups[result->n].max = b->max;
         result->groups[result->n].label = result->labels[result->n];
         result->map[h] = result->n++;
       }
