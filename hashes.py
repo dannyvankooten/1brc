@@ -21,10 +21,22 @@ def sdbm(s):
         h = ord(ch) + (h << 6) + (h << 16) - h
     return h
 
-def ooooo(s):
+def alphabetical(s):
     h = 0
     for ch in s:
         h = (h * 26) + ord(ch)
+    return h
+
+def alphabetical_first_4(s):
+    h = 0
+    for ch in s[:4]:
+        h = (h * 26) + ord(ch)
+    return h
+
+def m31(s):
+    h = 0
+    for ch in s:
+        h = (h * 31) + ord(ch)
     return h
 
 def adler32(s):
@@ -35,6 +47,7 @@ def adler32(s):
         h2 = (h2 + h1) % 65521
     return (h2 << 16) | h1
 
+
 with open("primes.txt") as f:
     primes = [int(x) for x in f.read().splitlines()]
 
@@ -42,23 +55,29 @@ with open("cities.txt") as f:
     cities = f.read().splitlines()
 
 
-pri = 0
-while pri < 100:
-    # print("\n\n# {}".format(primes[pri]))
-    seen = {}
-    collissions = 0
-    for city in cities:
-        h = adler32(city) % primes[pri]
-        if h in seen:
-            # print("{} ({}) collides with {}!".format(city, h, seen[h]))
-            collissions += 1
+primes = primes[:150]
+powers = [(2**n) for n in range(9, 12)]
 
-        seen[h] = city
+for f in [alphabetical, alphabetical_first_4, m31, adler32, djb2, fnv1a, sdbm, hash]:
+    for prime in powers:
+        seen = {}
+        collissions = 0
+        for city in cities:
+            h = f(city) & (prime-1)
+            seen[h] = city
 
-    pri += 1
-    if collissions == 0:
-        printf("{} is very good!".format(primes[pri]))
-        os.exit()
-        break
+        collissions = len(cities)-len(seen)
+        if collissions < 0.10 * len(cities):
+            print("{} with power of 2 capacity {} has a collission rate of {:.2f}".format(f.__qualname__, prime, collissions / len(cities)))
 
-    print("{}: {}/{} collissions".format(primes[pri], collissions, len(cities)))
+    for prime in primes:
+        seen = {}
+        collissions = 0
+        for city in cities:
+            h = f(city) % prime
+            seen[h] = city
+
+        collissions = len(cities)-len(seen)
+        if collissions < 0.10 * len(cities):
+            print("{} with prime capacity {} has a collission rate of {:.2f}".format(f.__qualname__, prime, collissions / len(cities)))
+
