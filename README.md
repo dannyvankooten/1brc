@@ -35,6 +35,9 @@ user    0m26.654s
 sys     0m0.868s
 ```
 
+**Note:** the performance difference between a warm and a hot cache is quite extreme. Run `echo 3 > /proc/sys/vm/drop_caches` to drop your pagecache, then run the program twice in a row. It's not uncommon for the second run to be well over twice as fast.
+
+
 ### Benchmarks
 
 Since I don't have access to a Hetzner CCX33 box, here are the reference times for the currently leading Java implementations from the official challenge when I run them on my machine.

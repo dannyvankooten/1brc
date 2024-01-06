@@ -18,40 +18,32 @@
 #define MAX_GROUPBY_KEY_LENGTH 100
 #define NTHREADS 16
 
-// // branchless min/max of 2 integers
-static inline int min(const int a, const int b) {
-  return a ^ ((b ^ a) & -(b < a));
-}
-static inline int max(const int a, const int b) {
-  return a ^ ((a ^ b) & -(a < b));
-}
+#define min(a, b) (a ^ ((b ^ a) & -(b < a)));
+#define max(a, b) (a ^ ((a ^ b) & -(a < b)));
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-static char *parse_number(int *dest, char *s) {
-  int n = 0;
+static inline const char *parse_number(int *dest, const char *s) {
 
   // parse sign
-  int mod = 1;
+  int mod;
   if (*s == '-') {
     mod = -1;
     s++;
-  }
-
-  if (*(s + 1) == '.') {
-    n = mod * (((s[0] - '0') * 10) + (s[2] - '0'));
-    s += 3;
   } else {
-    n = mod * ((s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[3] - '0'));
-    s += 4;
+    mod = 1;
   }
 
-  *dest = n;
-  return s;
+  if (s[1] == '.') {
+    *dest = mod * (((s[0] - '0') * 10) + (s[2] - '0'));
+    return s + 4;
+  }
+
+  *dest = mod * ((s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[3] - '0'));
+  return s + 5;
 }
 
 // hash returns a simple (but fast) hash for the first n bytes of data
-//
 static unsigned int hash(const unsigned char *data, int n) {
   unsigned int hash = 0;
 
@@ -83,12 +75,12 @@ struct Chunk {
   char *data;
 };
 
-// cmp compares the city property of the result that both pointers point
+// qsort callback
 static int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct Group *)ptr_a)->label, ((struct Group *)ptr_b)->label);
 }
 
-static unsigned int
+static inline unsigned int
 hash_probe(int map[HCAP],
            char groups[MAX_DISTINCT_GROUPS][MAX_GROUPBY_KEY_LENGTH],
            const char *start, int len) {
@@ -125,13 +117,14 @@ static void *process_chunk(void *ptr) {
          MAX_DISTINCT_GROUPS * MAX_GROUPBY_KEY_LENGTH * sizeof(char));
   memset(result->map, -1, HCAP * sizeof(int));
 
-  char *s = &ch->data[ch->start];
-  char *end = &ch->data[ch->end];
-  char *linestart;
+  const char *s = &ch->data[ch->start];
+  const char *end = &ch->data[ch->end];
+  const char *linestart;
   unsigned int h;
   int temperature;
   int len;
   int c;
+  int mask;
 
   while (s != end) {
     linestart = s;
@@ -139,17 +132,13 @@ static void *process_chunk(void *ptr) {
     // hash everything up to ';'
     // assumption: key is at least 1 char
     len = 1;
-    h = (unsigned char)*s++;
-    while (*s != ';') {
-      h = (h * 31) + (unsigned char)*s++;
-      len++;
+    h = (unsigned char)s[0];
+    while (s[len] != ';') {
+      h = (h * 31) + (unsigned char)s[len++];
     }
 
-    // skip ';'
-    s++;
-
     // parse decimal number as int
-    s = parse_number(&temperature, s);
+    s = parse_number(&temperature, s + len + 1);
 
     // probe map until free spot or match
     h = h & (HCAP - 1);
@@ -171,12 +160,13 @@ static void *process_chunk(void *ptr) {
     } else {
       result->groups[c].count += 1;
       result->groups[c].sum += temperature;
-      result->groups[c].min = min(result->groups[c].min, temperature);
-      result->groups[c].max = max(result->groups[c].max, temperature);
+      mask = (result->groups[c].min > temperature) - 1;
+      result->groups[c].min =
+          (result->groups[c].min & mask) | (temperature & ~mask);
+      mask = (result->groups[c].max > temperature) - 1;
+      result->groups[c].max =
+          (result->groups[c].max & mask) | (temperature & ~mask);
     }
-
-    // skip newline
-    s++;
   }
 
   return (void *)result;
