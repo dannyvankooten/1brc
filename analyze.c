@@ -18,13 +18,17 @@
 #define MAX_GROUPBY_KEY_LENGTH 100
 #define NTHREADS 16
 
-// branchless min/max of 2 integers
-static inline int min(int a, int b) { return a ^ ((b ^ a) & -(b < a)); }
-static inline int max(int a, int b) { return a ^ ((a ^ b) & -(a < b)); }
+// // branchless min/max of 2 integers
+static inline int min(const int a, const int b) {
+  return a ^ ((b ^ a) & -(b < a));
+}
+static inline int max(const int a, const int b) {
+  return a ^ ((a ^ b) & -(a < b));
+}
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-static void parse_number(int *dest, char *s, char **endptr) {
+static char *parse_number(int *dest, char *s) {
   int n = 0;
 
   // parse sign
@@ -43,7 +47,7 @@ static void parse_number(int *dest, char *s, char **endptr) {
   }
 
   *dest = n;
-  *endptr = s;
+  return s;
 }
 
 // hash returns a simple (but fast) hash for the first n bytes of data
@@ -123,25 +127,40 @@ static void *process_chunk(void *ptr) {
 
   char *s = &ch->data[ch->start];
   char *end = &ch->data[ch->end];
-  char *start;
-  char *sep;
+  char *linestart;
   unsigned int h;
   int temperature;
   int len;
   int c;
 
   while (s != end) {
-    start = s;
-    sep = strchr(start + 2, ';');
-    len = (int)(sep - start);
-    parse_number(&temperature, sep + 1, &s);
+    linestart = s;
+
+    // hash everything up to ';'
+    // assumption: key is at least 1 char
+    len = 1;
+    h = (unsigned char)*s++;
+    while (*s != ';') {
+      h = (h * 31) + (unsigned char)*s++;
+      len++;
+    }
+
+    // skip ';'
+    s++;
+
+    // parse decimal number as int
+    s = parse_number(&temperature, s);
 
     // probe map until free spot or match
-    h = hash_probe(result->map, result->labels, start, len);
+    h = h & (HCAP - 1);
+    while (result->map[h] >= 0 && memcmp(result->labels[result->map[h]],
+                                         linestart, (size_t)len) != 0) {
+      h = (h + 1) & (HCAP - 1);
+    }
     c = result->map[h];
 
     if (c < 0) {
-      memcpy(result->labels[result->n], start, (size_t)len);
+      memcpy(result->labels[result->n], linestart, (size_t)len);
       result->labels[result->n][len] = 0x0;
       result->groups[result->n].label = result->labels[result->n];
       result->groups[result->n].count = 1;
@@ -173,9 +192,7 @@ void result_to_str(char *dest, const struct Result *result) {
         ((float)result->groups[i].sum / (float)result->groups[i].count) / 10.0,
         (float)result->groups[i].max / 10.0);
 
-    // copy buf to output
     memcpy(dest, buf, n);
-
     if (i < result->n - 1) {
       memcpy(dest + n, ", ", 2);
       n += 2;
@@ -231,16 +248,19 @@ int main(int argc, char **argv) {
   }
 
   // merge results
+  char *label;
+  struct Group *b;
+  unsigned int h;
+  int c;
   struct Result *result = results[0];
   for (int i = 1; i < NTHREADS; i++) {
     for (int j = 0; j < results[i]->n; j++) {
-      struct Group *b = &results[i]->groups[j];
-      char *label = results[i]->labels[j];
-      unsigned int h =
-          hash_probe(result->map, result->labels, label, (int)strlen(label));
+      b = &results[i]->groups[j];
+      label = results[i]->labels[j];
+      h = hash_probe(result->map, result->labels, label, (int)strlen(label));
 
       // TODO: Refactor lines below, we can share some logic with process_chunk
-      int c = result->map[h];
+      c = result->map[h];
       if (c >= 0) {
         result->groups[c].count += b->count;
         result->groups[c].sum += b->sum;

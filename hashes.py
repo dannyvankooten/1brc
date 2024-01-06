@@ -72,7 +72,7 @@ def test(f, p):
 
 
 primes = primes[:150]
-powers = [(2**n) for n in range(9, 13)]
+powers = [(2**n) for n in range(9, 15)]
 results = [test(f, cap) for f in  [alphabetical, alphabetical_first_4, m31, adler32, djb2, fnv1a, sdbm, hash] for cap in primes+powers]
 results.sort(key=lambda x: x[0])
 
