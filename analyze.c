@@ -18,6 +18,7 @@
 #define MAX_GROUPBY_KEY_LENGTH 100
 #define NTHREADS 16
 
+// branchless min/max (on some machines at least)
 #define min(a, b) (a ^ ((b ^ a) & -(b < a)));
 #define max(a, b) (a ^ ((a ^ b) & -(a < b)));
 
@@ -56,7 +57,7 @@ static unsigned int hash(const unsigned char *data, int n) {
 
 struct Group {
   unsigned int count;
-  int sum;
+  long sum;
   int min;
   int max;
   char *label;
@@ -72,7 +73,7 @@ struct Result {
 struct Chunk {
   size_t start;
   size_t end;
-  char *data;
+  const char *data;
 };
 
 // qsort callback
@@ -214,7 +215,7 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
+  const char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
   if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);
