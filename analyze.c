@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -14,10 +13,10 @@
 // Since we use linear probing this needs to be at least twice as big
 // as the # of distinct strings in our dataset
 // Also must be power of 2 so we can use bit-and instead of modulo
-#define HCAP (512 * 2 * 2)
+#define HCAP (4096)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
-#define NTHREADS 32
+#define NTHREADS 16
 
 // branchless min/max of 2 integers
 static inline int min(int a, int b) { return a ^ ((b ^ a) & -(b < a)); }
@@ -47,12 +46,12 @@ static void parse_number(int *dest, char *s, char **endptr) {
   *endptr = s;
 }
 
-// hash returns the fnv-1a hash of the first n bytes in data
+// hash returns a simple (but fast) hash for the first n bytes of data
+//
 static unsigned int hash(const unsigned char *data, int n) {
   unsigned int hash = 0;
 
   for (int i = 0; i < n; i++) {
-    // hash *= 0x811C9DC5; // FNV prime
     hash = (hash * 31) + data[i];
   }
 

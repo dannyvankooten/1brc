@@ -55,29 +55,26 @@ with open("cities.txt") as f:
     cities = f.read().splitlines()
 
 
+def test(f, p):
+
+    if p.bit_count() == 1:
+        fcapped = lambda data: f(data) & (p-1)
+    else:
+        fcapped = lambda data: f(data) % p
+    seen = {}
+    collissions = 0
+    for city in cities:
+        h = fcapped(city)
+        seen[h] = city
+
+    collissions = len(cities)-len(seen)
+    return (collissions / len(cities), f, p)
+
+
 primes = primes[:150]
-powers = [(2**n) for n in range(9, 12)]
+powers = [(2**n) for n in range(9, 13)]
+results = [test(f, cap) for f in  [alphabetical, alphabetical_first_4, m31, adler32, djb2, fnv1a, sdbm, hash] for cap in primes+powers]
+results.sort(key=lambda x: x[0])
 
-for f in [alphabetical, alphabetical_first_4, m31, adler32, djb2, fnv1a, sdbm, hash]:
-    for prime in powers:
-        seen = {}
-        collissions = 0
-        for city in cities:
-            h = f(city) & (prime-1)
-            seen[h] = city
-
-        collissions = len(cities)-len(seen)
-        if collissions < 0.10 * len(cities):
-            print("{} with power of 2 capacity {} has a collission rate of {:.2f}".format(f.__qualname__, prime, collissions / len(cities)))
-
-    for prime in primes:
-        seen = {}
-        collissions = 0
-        for city in cities:
-            h = f(city) % prime
-            seen[h] = city
-
-        collissions = len(cities)-len(seen)
-        if collissions < 0.10 * len(cities):
-            print("{} with prime capacity {} has a collission rate of {:.2f}".format(f.__qualname__, prime, collissions / len(cities)))
-
+for (col_rate, fn, cap) in results[0:10]:
+    print("{} {}: {:.2f}".format(fn.__qualname__, cap, col_rate))
