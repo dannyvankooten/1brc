@@ -30,9 +30,9 @@ This will create a 12 GB file with 1B rows named `measurements.txt` in your curr
 ```
 time bin/analyze measurements.txt >/dev/null
 
-real    0m1.949s
-user    0m26.654s
-sys     0m0.868s
+real	0m1.861s
+user	0m26.153s
+sys	0m0.564s
 ```
 
 **Note:** the performance difference between a warm and a hot cache is quite extreme. Run `echo 3 > /proc/sys/vm/drop_caches` to drop your pagecache, then run the program twice in a row. It's not uncommon for the second run to be well over twice as fast.
@@ -44,6 +44,6 @@ Since I don't have access to a Hetzner CCX33 box, here are the reference times f
 
 | # | Result (m:s.ms) | Implementation     | Language | Submitter     |
 |---|-----------------|--------------------|-----|---------------|
-| ? |        00:01.949 | [link](https://github.com/dannyvankooten/1brc/blob/main/analyze.c)| C | [Danny van Kooten](https://github.com/dannyvankooten)|
+| ? |        00:01.861 | [link](https://github.com/dannyvankooten/1brc/blob/main/analyze.c)| C | [Danny van Kooten](https://github.com/dannyvankooten)|
 | 1.|        00:06.131 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_spullara.java)| 21.0.1-graalce| [Sam Pullara](https://github.com/spullara)|
 | 2.|        00:06.421 | [link](https://github.com/gunnarmorling/1brc/blob/main/src/main/java/dev/morling/onebrc/CalculateAverage_royvanrijn.java)| 21.0.1-graalce   | [Roy van Rijn](https://github.com/royvanrijn)|

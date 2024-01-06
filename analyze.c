@@ -36,11 +36,11 @@ static inline const char *parse_number(int *dest, const char *s) {
   }
 
   if (s[1] == '.') {
-    *dest = mod * (((s[0] - '0') * 10) + (s[2] - '0'));
+    *dest = ((s[0] * 10) + s[2] - ('0' * 11)) * mod;
     return s + 4;
   }
 
-  *dest = mod * ((s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[3] - '0'));
+  *dest = (s[0] * 100 + s[1] * 10 + s[3] - '0' * 111) * mod;
   return s + 5;
 }
 
@@ -125,7 +125,6 @@ static void *process_chunk(void *ptr) {
   int temperature;
   int len;
   int c;
-  int mask;
 
   while (s != end) {
     linestart = s;
@@ -161,12 +160,8 @@ static void *process_chunk(void *ptr) {
     } else {
       result->groups[c].count += 1;
       result->groups[c].sum += temperature;
-      mask = (result->groups[c].min > temperature) - 1;
-      result->groups[c].min =
-          (result->groups[c].min & mask) | (temperature & ~mask);
-      mask = (result->groups[c].max > temperature) - 1;
-      result->groups[c].max =
-          (result->groups[c].max & mask) | (temperature & ~mask);
+      result->groups[c].min = min(result->groups[c].min, temperature);
+      result->groups[c].max = max(result->groups[c].max, temperature);
     }
   }
 
