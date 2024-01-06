@@ -287,11 +287,11 @@ int main(int argc, char **argv) {
   result_to_str(buf, result);
   puts(buf);
 
-  // clean-up
-  munmap(data, sz);
-  close(fd);
-  for (int i = 0; i < NTHREADS; i++) {
-    free(results[i]);
-  }
-  exit(EXIT_SUCCESS);
+  // // clean-up
+  // munmap(data, sz);
+  // close(fd);
+  // for (int i = 0; i < NTHREADS; i++) {
+  //   free(results[i]);
+  // }
+  // exit(EXIT_SUCCESS);
 }
