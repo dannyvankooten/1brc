@@ -1,7 +1,7 @@
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define HCAP (4096)
 
 struct result {
   char city[32];
@@ -9,26 +9,23 @@ struct result {
   double sum, min, max;
 };
 
-unsigned int hash(char *name) {
-  return (name[0] - 'A') * 10000 + (name[1] - 'a') * 100 + (name[2] - 'a');
-}
+// hash returns a simple (but fast) hash for the first n bytes of data
+static unsigned int hash(const unsigned char *data, int n) {
+  unsigned int hash = 0;
 
-int getcity(char *city, struct result results[], int nresults) {
-  for (int i = 0; i < nresults; i++) {
-    if (strcmp(results[i].city, city) == 0) {
-      return i;
-    }
+  for (int i = 0; i < n; i++) {
+    hash = (hash * 31) + data[i];
   }
 
-  return -1;
+  return hash;
 }
 
-int cmp(const void *ptr_a, const void *ptr_b) {
+static int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct result *)ptr_a)->city, ((struct result *)ptr_b)->city);
 }
 
-int main(int argc, char **argv) {
-  char *file = "measurements-1K.txt";
+int main(int argc, const char **argv) {
+  const char *file = "measurements.txt";
   if (argc > 1) {
     file = argv[1];
   }
@@ -41,34 +38,50 @@ int main(int argc, char **argv) {
 
   struct result results[450];
   int nresults = 0;
-  char *buf = malloc(1 << 10);
+  char buf[1 << 10];
+  int map[HCAP];
+  memset(map, -1, HCAP * sizeof(int));
+
   while (fgets(buf, 1 << 10, fh)) {
     char *pos = strchr(buf, ';');
     *pos = 0x0;
     double measurement = strtod(pos + 1, NULL);
 
-    int c = getcity(buf, results, nresults);
+    // find index of group by key through hash with linear probing
+    int h = hash((unsigned char *)buf, pos - buf) & (HCAP - 1);
+    while (map[h] != -1 && strcmp(results[map[h]].city, buf) != 0) {
+      h = (h + 1) & (HCAP - 1);
+    }
+    int c = map[h];
+
     if (c < 0) {
       strcpy(results[nresults].city, buf);
       results[nresults].sum = measurement;
       results[nresults].max = measurement;
       results[nresults].min = measurement;
       results[nresults].count = 1;
+      map[h] = nresults;
       nresults++;
     } else {
       results[c].sum += measurement;
       results[c].count += 1;
-      results[c].min = fmin(results[c].min, measurement);
-      results[c].max = fmax(results[c].max, measurement);
+      if (results[c].min > measurement) {
+        results[c].min = measurement;
+      }
+      if (results[c].max < measurement) {
+        results[c].max = measurement;
+      }
     }
   }
 
   qsort(results, (size_t)nresults, sizeof(*results), cmp);
+
   for (int i = 0; i < nresults; i++) {
     printf("%s=%.1f/%.1f/%.1f%s", results[i].city, results[i].min,
            results[i].sum / results[i].count, results[i].max,
            i < nresults ? ", " : "");
   }
+  puts("\n");
 
   fclose(fh);
 }
