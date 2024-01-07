@@ -13,6 +13,19 @@ struct result {
   double sum, min, max;
 };
 
+static const char *parse_city(int *len, unsigned int *hash, const char *s) {
+  int _len = 1;
+  unsigned int _hash = (unsigned char)s[0];
+
+  while (s[_len] != ';') {
+    _hash = (_hash * 31) + (unsigned char)s[_len++];
+  }
+
+  *len = _len;
+  *hash = _hash & (HCAP - 1);
+  return s + _len + 1;
+}
+
 static const char *parse_double(double *dest, const char *s) {
   // parse sign
   double mod;
@@ -31,17 +44,6 @@ static const char *parse_double(double *dest, const char *s) {
   *dest =
       ((double)((s[0]) * 10 + s[1]) + (double)s[3] / 10.0 - 11.1 * '0') * mod;
   return s + 5;
-}
-
-// hash returns a simple (but fast) hash for the first n bytes of data
-static unsigned int hash(const unsigned char *data, int n) {
-  unsigned int hash = 0;
-
-  for (int i = 0; i < n; i++) {
-    hash = (hash * 31) + data[i];
-  }
-
-  return hash;
 }
 
 static int cmp(const void *ptr_a, const void *ptr_b) {
@@ -85,7 +87,6 @@ int main(int argc, const char **argv) {
   memset(map, -1, HCAP * sizeof(int));
 
   const char *linestart;
-  char *pos;
   double measurement;
   unsigned int h;
   int c;
@@ -107,12 +108,8 @@ int main(int argc, const char **argv) {
 
     while (s < &buf[nread]) {
       linestart = s;
-      pos = strchr(s, ';');
-      keylen = (int)(pos - linestart);
-      s = parse_double(&measurement, pos + 1);
-
-      // find index of group by key through hash with linear probing
-      h = hash((unsigned char *)linestart, keylen) & (HCAP - 1);
+      s = parse_city(&keylen, &h, s);
+      s = parse_double(&measurement, s);
       c = map[h];
       while (c != -1 &&
              memcmp(results[c].city, linestart, (size_t)keylen) != 0) {

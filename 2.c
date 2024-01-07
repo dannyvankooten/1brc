@@ -4,7 +4,7 @@
 #define HCAP (4096)
 
 struct result {
-  char city[32];
+  char city[100];
   int count;
   double sum, min, max;
 };
