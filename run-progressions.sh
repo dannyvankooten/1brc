@@ -14,7 +14,7 @@ DESCRIPTIONS=(
 )
 
 for PROGRAM in {1..7}; do
-    # run program 5 times, capturing time output
+    # run each program 5 times, capturing time output
     TIMES=""
     for n in {1..5}; do
         TIMES+="$({ time ./$PROGRAM measurements-100M.txt > /dev/null; } 2>&1 ) "

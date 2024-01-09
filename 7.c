@@ -213,7 +213,7 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  const char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
+  const char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
   if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);
