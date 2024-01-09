@@ -16,7 +16,10 @@
 #define HCAP (4096)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
+
+#ifndef NTHREADS
 #define NTHREADS 16
+#endif
 
 // branchless min/max (on some machines at least)
 #define min(a, b) (a ^ ((b ^ a) & -(b < a)));
@@ -210,7 +213,7 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  const char *data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
+  const char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
   if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);

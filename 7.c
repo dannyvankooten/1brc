@@ -16,7 +16,10 @@
 #define HCAP (4096)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
+
+#ifndef NTHREADS
 #define NTHREADS 16
+#endif
 
 // branchless min/max (on some machines at least)
 #define min(a, b) (a ^ ((b ^ a) & -(b < a)));

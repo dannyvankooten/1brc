@@ -13,7 +13,10 @@
 #define BUFSIZE ((1 << 20) * 64)
 #define MAX_DISTINCT_GROUPS 512
 #define MAX_GROUPBY_KEY_LENGTH 100
+
+#ifndef NTHREADS
 #define NTHREADS 16
+#endif
 
 struct Group {
   char key[MAX_GROUPBY_KEY_LENGTH];
