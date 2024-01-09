@@ -56,11 +56,11 @@ with open("cities.txt") as f:
 
 
 def test(f, p):
-
     if p.bit_count() == 1:
         fcapped = lambda data: f(data) & (p-1)
     else:
         fcapped = lambda data: f(data) % p
+
     seen = {}
     collissions = 0
     for city in cities:
@@ -77,4 +77,4 @@ results = [test(f, cap) for f in  [alphabetical, alphabetical_first_4, m31, adle
 results.sort(key=lambda x: x[0])
 
 for (col_rate, fn, cap) in results[0:10]:
-    print("{} {}: {:.2f}".format(fn.__qualname__, cap, col_rate))
+    print("{} {}: {:.3f}".format(fn.__qualname__, cap, col_rate))

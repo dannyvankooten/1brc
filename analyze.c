@@ -9,13 +9,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-// Capacity of our hashmap
-// Since we use linear probing this needs to be at least twice as big
-// as the # of distinct strings in our dataset
-// Also must be power of 2 so we can use bit-and instead of modulo
-#define HCAP (4096)
-#define MAX_DISTINCT_GROUPS 512
+#define MAX_DISTINCT_GROUPS 10000
 #define MAX_GROUPBY_KEY_LENGTH 100
+#define HCAP (1 << 14)
 
 #ifndef NTHREADS
 #define NTHREADS 16
@@ -43,19 +39,8 @@ static inline const char *parse_number(int *dest, const char *s) {
     return s + 4;
   }
 
-  *dest = (s[0] * 100 + s[1] * 10 + s[3] - '0' * 111) * mod;
+  *dest = (s[0] * 100 + s[1] * 10 + s[3] - ('0' * 111)) * mod;
   return s + 5;
-}
-
-// hash returns a simple (but fast) hash for the first n bytes of data
-static unsigned int hash(const unsigned char *data, int n) {
-  unsigned int hash = 0;
-
-  for (int i = 0; i < n; i++) {
-    hash = (hash * 31) + data[i];
-  }
-
-  return hash;
 }
 
 struct Group {
@@ -63,7 +48,7 @@ struct Group {
   long sum;
   int min;
   int max;
-  char *label;
+  const char *label;
 };
 
 struct Result {
@@ -84,13 +69,22 @@ static int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct Group *)ptr_a)->label, ((struct Group *)ptr_b)->label);
 }
 
+// finds hash slot in map of key
 static inline unsigned int
 hash_probe(int map[HCAP],
            char groups[MAX_DISTINCT_GROUPS][MAX_GROUPBY_KEY_LENGTH],
-           const char *start, int len) {
-  // probe map until free spot or match
-  unsigned int h = hash((unsigned char *)start, len) & (HCAP - 1);
-  while (map[h] >= 0 && memcmp(groups[map[h]], start, (size_t)len) != 0) {
+           const char *key) {
+
+  // hash key
+  unsigned int h = (unsigned char)key[0];
+  unsigned int len = 1;
+  for (; key[len] != 0x0; len++) {
+    h = (h * 31) + (unsigned char)key[len];
+  }
+
+  // probe hashmap until match
+  h = h & (HCAP - 1);
+  while (map[h] >= 0 && memcmp(groups[map[h]], key, len) != 0) {
     h = (h + 1) & (HCAP - 1);
   }
 
@@ -163,8 +157,11 @@ static void *process_chunk(void *ptr) {
     } else {
       result->groups[c].count += 1;
       result->groups[c].sum += temperature;
-      result->groups[c].min = min(result->groups[c].min, temperature);
-      result->groups[c].max = max(result->groups[c].max, temperature);
+      if (temperature < result->groups[c].min) {
+        result->groups[c].min = temperature;
+      } else if (temperature > result->groups[c].max) {
+        result->groups[c].max = temperature;
+      }
     }
   }
 
@@ -246,7 +243,7 @@ int main(int argc, char **argv) {
     for (int j = 0; j < results[i]->n; j++) {
       b = &results[i]->groups[j];
       label = results[i]->labels[j];
-      h = hash_probe(result->map, result->labels, label, (int)strlen(label));
+      h = hash_probe(result->map, result->labels, label);
 
       // TODO: Refactor lines below, we can share some logic with process_chunk
       c = result->map[h];
@@ -256,7 +253,6 @@ int main(int argc, char **argv) {
         result->groups[c].min = min(result->groups[c].min, b->min);
         result->groups[c].max = max(result->groups[c].max, b->max);
       } else {
-        // memcpy(&result->groups[result->n], b, sizeof(*b));
         strcpy(result->labels[result->n], label);
         result->groups[result->n].count = b->count;
         result->groups[result->n].sum = b->sum;
@@ -276,11 +272,11 @@ int main(int argc, char **argv) {
   result_to_str(buf, result);
   puts(buf);
 
-  // // clean-up
-  // munmap(data, sz);
-  // close(fd);
-  // for (int i = 0; i < NTHREADS; i++) {
-  //   free(results[i]);
-  // }
-  // exit(EXIT_SUCCESS);
+  // clean-up
+  munmap((void *)data, sz);
+  close(fd);
+  for (int i = 0; i < NTHREADS; i++) {
+    free(results[i]);
+  }
+  exit(EXIT_SUCCESS);
 }

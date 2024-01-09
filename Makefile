@@ -1,6 +1,6 @@
 NTHREADS=$(shell nproc --all 2>/dev/null || sysctl -n hw.logicalcpu)
 CFLAGS+=-O2 -march=native -Wall -Wextra -Wpedantic \
--Wformat=2 -Wconversion -Wtrampolines -Wimplicit-fallthrough -DNTHREADS=$(NTHREADS)
+-Wformat=2 -Wconversion -Wimplicit-fallthrough -DNTHREADS=$(NTHREADS)
 
 all: bin/ bin/create-sample bin/analyze
 
