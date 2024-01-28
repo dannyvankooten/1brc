@@ -30,9 +30,9 @@ struct Group {
 };
 
 struct Result {
-  int map[HCAP];
+  unsigned int map[HCAP];
   unsigned int hashes[HCAP];
-  int n;
+  unsigned int n;
   struct Group groups[MAX_DISTINCT_GROUPS];
 };
 
@@ -44,8 +44,7 @@ struct Chunk {
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-static inline const char *parse_number(int *dest, const char *s) {
-
+static inline const char *parse_number(int *restrict dest, const char *s) {
   // parse sign
   int mod;
   if (*s == '-') {
@@ -70,7 +69,7 @@ static int cmp(const void *ptr_a, const void *ptr_b) {
 }
 
 // finds hash slot in map of key
-static inline unsigned int hash_probe(struct Result *result, const char *key) {
+static inline unsigned int hash_probe(struct Result *result, const char *restrict key) {
 
   // hash key
   unsigned int h = (unsigned char)key[0];
@@ -110,7 +109,7 @@ static void *process_chunk(void *ptr) {
   result->n = 0;
 
   memset(result->hashes, 0, HCAP * sizeof(int));
-  memset(result->map, -1, HCAP * sizeof(int));
+  memset(result->map, 0, HCAP * sizeof(int));
 
   const char *s = &ch->data[ch->start];
   const char *end = &ch->data[ch->end];
@@ -118,7 +117,7 @@ static void *process_chunk(void *ptr) {
   unsigned int h;
   int temperature;
   int len;
-  int c;
+  unsigned int c;
 
   while (s != end) {
     linestart = s;
@@ -141,7 +140,7 @@ static void *process_chunk(void *ptr) {
     }
     c = result->map[h & (HCAP - 1)];
 
-    if (c < 0) {
+    if (c == 0) {
       memcpy(result->groups[result->n].key, linestart, (size_t)len);
       result->groups[result->n].key[len] = 0x0;
       result->groups[result->n].count = 1;
@@ -167,7 +166,7 @@ static void *process_chunk(void *ptr) {
 void result_to_str(char *dest, const struct Result *result) {
   char buf[128];
   *dest++ = '{';
-  for (int i = 0; i < result->n; i++) {
+  for (unsigned int i = 0; i < result->n; i++) {
     size_t n = (size_t)sprintf(
         buf, "%s=%.1f/%.1f/%.1f", result->groups[i].key,
         (float)result->groups[i].min / 10.0,
@@ -232,10 +231,10 @@ int main(int argc, char **argv) {
   // merge results
   struct Group *b;
   unsigned int h;
-  int c;
+  unsigned int c;
   struct Result *result = results[0];
   for (int i = 1; i < NTHREADS; i++) {
-    for (int j = 0; j < results[i]->n; j++) {
+    for (unsigned int j = 0; j < results[i]->n; j++) {
       b = &results[i]->groups[j];
       h = hash_probe(result, b->key);
 

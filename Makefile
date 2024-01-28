@@ -1,6 +1,12 @@
 NTHREADS=$(shell nproc --all 2>/dev/null || sysctl -n hw.logicalcpu)
-CFLAGS+=-O2 -march=native -Wall -Wextra -Wpedantic \
--Wformat=2 -Wconversion -Wimplicit-fallthrough -DNTHREADS=$(NTHREADS)
+CFLAGS+=-O2 -march=native -mtune=native -flto -Wall -Wextra -Wpedantic \
+-Wformat=2 -Wconversion -Wundef -Winline -Wimplicit-fallthrough -DNTHREADS=$(NTHREADS)
+
+ifdef DEBUG
+CFLAGS+= -D_FORTIFY_SOURCE=2 -D_GLIBCXX_ASSERTIONS 	\
+-fsanitize=address -fsanitize=undefined -g 									\
+-fstack-protector-strong
+endif
 
 all: bin/ bin/create-sample bin/analyze
 
