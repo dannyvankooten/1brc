@@ -197,6 +197,24 @@ void result_to_str(char *dest, struct Result *result) {
 }
 
 int main(int argc, char **argv) {
+  int pipefd[2];
+  pipe(pipefd);
+  pid_t pid;
+  pid = fork();
+  if (pid > 0) {
+    // close write pipe
+    close(pipefd[1]);
+    size_t sz = (1 << 10) * 16;
+    char buf[sz];
+    read(pipefd[0], &buf, sz);
+    printf("%s", buf);
+    close(pipefd[0]);
+    return EXIT_SUCCESS;
+  }
+
+  // close unused read pipe
+  close(pipefd[0]);
+
   char *file = "measurements.txt";
   if (argc > 1) {
     file = argv[1];
@@ -269,7 +287,9 @@ int main(int argc, char **argv) {
   // prepare output string
   char buf[(1 << 10) * 16];
   result_to_str(buf, result);
-  puts(buf);
+
+  write(pipefd[1], buf, strlen(buf));
+  close(pipefd[1]);
 
   // clean-up
   munmap((void *)data, sz);
@@ -277,5 +297,5 @@ int main(int argc, char **argv) {
   for (unsigned int i = 0; i < NTHREADS; i++) {
     free(results[i]);
   }
-  exit(EXIT_SUCCESS);
+  return EXIT_SUCCESS;
 }

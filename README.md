@@ -30,9 +30,9 @@ This will create a 12 GB file with 1B rows named `measurements.txt` in your curr
 ```
 time bin/analyze measurements.txt >/dev/null
 
-real	0m1.590s
-user	0m21.489s
-sys	    0m0.644s
+real	0m1.392s
+user	0m0.000s
+sys	    0m0.010sys
 ```
 
 **Note:** the performance difference between a warm and a hot pagecache is quite extreme. Run `echo 3 > /proc/sys/vm/drop_caches` to drop your pagecache, then run the program twice in a row. It's not uncommon for the second run to be well over twice as fast.
