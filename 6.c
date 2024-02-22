@@ -119,13 +119,9 @@ static void *process_chunk(void *arg) {
   }
   result->n = 0;
 
-  char *buf = mmap(NULL, BUFSIZE, PROT_READ | PROT_WRITE,
-                   MAP_SHARED | MAP_HUGETLB | MAP_ANONYMOUS, -1, 0);
-  // char *buf = malloc(BUFSIZE);
-  if (buf == NULL || buf == MAP_FAILED) {
-    fprintf(stdout, "warning: for optimal performance, 6.c needs HUGETLB "
-                    "enabled. falling back to malloc for now.\n");
-    buf = malloc(BUFSIZE);
+  char *buf = malloc(BUFSIZE);
+  if (!buf) {
+    exit(1);
   }
   int map[HCAP];
   memset(map, -1, HCAP * sizeof(int));
@@ -177,7 +173,7 @@ static void *process_chunk(void *arg) {
     }
   }
 
-  // free(buf);
+  free(buf);
   return (void *)result;
 }
 

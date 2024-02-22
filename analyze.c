@@ -11,7 +11,12 @@
 
 #define MAX_DISTINCT_GROUPS 10000
 #define MAX_GROUPBY_KEY_LENGTH 100
-#define HCAP (1 << 14)
+
+// Capacity of our hashmap
+// Needs to be a power of 2
+// so we can bit-and instead of modulo
+#define HASHMAP_CAPACITY 16384
+#define HASHMAP_INDEX(h) (h & (HASHMAP_CAPACITY - 1))
 
 #ifndef NTHREADS
 #define NTHREADS 16
@@ -27,8 +32,8 @@ struct Group {
 
 struct Result {
   unsigned int n;
-  unsigned int map[HCAP];
-  unsigned long hashes[HCAP];
+  unsigned int map[HASHMAP_CAPACITY];
+  unsigned long hashes[HASHMAP_CAPACITY];
   struct Group groups[MAX_DISTINCT_GROUPS];
 };
 
@@ -67,11 +72,12 @@ __attribute((always_inline))
 static inline int max(int a, int b) { return a > b ? a : b; }
 
 // qsort callback
-int cmp(const void *ptr_a, const void *ptr_b) {
+static inline int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct Group *)ptr_a)->key, ((struct Group *)ptr_b)->key);
 }
 
 // finds hash slot in map of key
+__attribute((always_inline))
 static inline unsigned long hash_probe(struct Result *result, const char *key) {
   // hash key
   unsigned long h = (unsigned char)key[0];
@@ -81,8 +87,8 @@ static inline unsigned long hash_probe(struct Result *result, const char *key) {
   }
 
   // linearly probe hashmap until match OR free spot
-  while (result->hashes[h & (HCAP - 1)] != 0 &&
-         h != result->hashes[h & (HCAP - 1)]) {
+  while (result->hashes[h & (HASHMAP_CAPACITY - 1)] != 0 &&
+         h != result->hashes[HASHMAP_INDEX(h)]) {
     h++;
   }
 
@@ -110,8 +116,13 @@ static void *process_chunk(void *ptr) {
     exit(EXIT_FAILURE);
   }
   result->n = 0;
-  memset(result->hashes, 0, HCAP * sizeof(*result->hashes));
-  memset(result->map, 0, HCAP * sizeof(*result->map));
+
+  // we could do this in a single call to memset
+  // since the two are contiguous in memory
+  // but this code is only called NTHREADS times
+  // so not really worth it
+  memset(result->hashes, 0, HASHMAP_CAPACITY * sizeof(*result->hashes));
+  memset(result->map, 0, HASHMAP_CAPACITY * sizeof(*result->map));
 
   char *s = &ch->data[ch->start];
   char *end = &ch->data[ch->end];
@@ -133,23 +144,23 @@ static void *process_chunk(void *ptr) {
     s = parse_number(&temperature, s + len + 1);
 
     // probe map until free spot or match
-    while (result->hashes[h & (HCAP - 1)] != 0 &&
-           h != result->hashes[h & (HCAP - 1)]) {
+    while (result->hashes[HASHMAP_INDEX(h)] != 0 &&
+           h != result->hashes[HASHMAP_INDEX(h)]) {
       h++;
     }
-    unsigned int c = result->map[h & (HCAP - 1)];
+    unsigned int c = result->map[HASHMAP_INDEX(h)];
 
     if (c == 0) {
       /* new entry */
-      unsigned int n = result->n;
+      c = result->n;
       memcpy(result->groups[result->n].key, linestart, len);
-      result->groups[n].key[len] = 0x0;
-      result->groups[n].count = 1;
-      result->groups[n].min = temperature;
-      result->groups[n].max = temperature;
-      result->groups[n].sum = temperature;
-      result->hashes[h & (HCAP - 1)] = h;
-      result->map[h & (HCAP - 1)] = n;
+      result->groups[c].key[len] = '\0';
+      result->groups[c].count = 1;
+      result->groups[c].min = temperature;
+      result->groups[c].max = temperature;
+      result->groups[c].sum = temperature;
+      result->hashes[HASHMAP_INDEX(h)] = h;
+      result->map[HASHMAP_INDEX(h)] = c;
       result->n++;
     } else {
       /* existing entry */
@@ -229,13 +240,12 @@ int main(int argc, char **argv) {
   }
 
   // merge results
-  struct Group *b;
   struct Result *result = results[0];
   for (unsigned int i = 1; i < NTHREADS; i++) {
     for (unsigned int j = 0; j < results[i]->n; j++) {
-      b = &results[i]->groups[j];
+      struct Group *b = &results[i]->groups[j];
       unsigned long h = hash_probe(result, b->key);
-      unsigned int c = result->map[h & (HCAP - 1)];
+      unsigned int c = result->map[HASHMAP_INDEX(h)];
       if (c > 0) {
         result->groups[c].count += b->count;
         result->groups[c].sum += b->sum;
@@ -247,8 +257,8 @@ int main(int argc, char **argv) {
         result->groups[result->n].sum = b->sum;
         result->groups[result->n].min = b->min;
         result->groups[result->n].max = b->max;
-        result->map[h & (HCAP - 1)] = result->n++;
-        result->hashes[h & (HCAP - 1)] = h;
+        result->map[HASHMAP_INDEX(h)] = result->n++;
+        result->hashes[HASHMAP_INDEX(h)] = h;
       }
     }
   }

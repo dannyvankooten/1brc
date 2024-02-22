@@ -39,6 +39,13 @@ def m31(s):
         h = (h * 31) + ord(ch)
     return h
 
+def m32(s):
+    h = 0
+    for ch in s:
+        h <<= 6
+        h += ord(ch) - ord('a')
+    return h
+
 def adler32(s):
     h1 = 0
     h2 = 0
@@ -73,8 +80,8 @@ def test(f, p):
 
 primes = primes[:150]
 powers = [(2**n) for n in range(9, 15)]
-results = [test(f, cap) for f in  [alphabetical, alphabetical_first_4, m31, adler32, djb2, fnv1a, sdbm, hash] for cap in primes+powers]
+results = [test(f, cap) for f in  [alphabetical, alphabetical_first_4, m31, m32, adler32, djb2, fnv1a, sdbm, hash] for cap in primes+powers]
 results.sort(key=lambda x: x[0])
 
-for (col_rate, fn, cap) in results[0:10]:
+for (col_rate, fn, cap) in results[0:20]:
     print("{} {}: {:.3f}".format(fn.__qualname__, cap, col_rate))

@@ -5,7 +5,7 @@
 
 The challenge: **compute simple floating-point math over 1 billion rows. As fast as possible, without dependencies.**
 
-Implemented in standard C99 with POSIX threads (however, no SIMD). `analyze.c` contains the fastest implementation, while `{1..7}.c` contain slower versions of the same program.
+Implemented in standard C11 with POSIX threads (however, no SIMD). `analyze.c` contains the fastest implementation, while `{1..7}.c` contain slower versions of the same program.
 
 I wrote up some implmentation details on my blog here: https://www.dannyvankooten.com/blog/2024/1brc/
 
