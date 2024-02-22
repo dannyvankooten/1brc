@@ -17,34 +17,31 @@
 #define NTHREADS 16
 #endif
 
-// branchless min/max (on some machines at least)
-#define min(a, b) (a ^ ((b ^ a) & -(b < a)));
-#define max(a, b) (a ^ ((a ^ b) & -(a < b)));
-
 struct Group {
   unsigned int count;
-  long sum;
   int min;
   int max;
+  long sum;
   char key[MAX_GROUPBY_KEY_LENGTH];
 };
 
 struct Result {
-  unsigned int map[HCAP];
-  unsigned int hashes[HCAP];
   unsigned int n;
+  unsigned int map[HCAP];
+  unsigned long hashes[HCAP];
   struct Group groups[MAX_DISTINCT_GROUPS];
 };
 
 struct Chunk {
   size_t start;
   size_t end;
-  const char *data;
+  char *data;
 };
 
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-static inline const char *parse_number(int *restrict dest, const char *s) {
+__attribute((always_inline))
+static inline char *parse_number(int *dest, char *s) {
   // parse sign
   int mod;
   if (*s == '-') {
@@ -63,16 +60,21 @@ static inline const char *parse_number(int *restrict dest, const char *s) {
   return s + 5;
 }
 
+__attribute((always_inline))
+static inline int min(int a, int b) { return a < b ? a : b; }
+
+__attribute((always_inline))
+static inline int max(int a, int b) { return a > b ? a : b; }
+
 // qsort callback
-static int cmp(const void *ptr_a, const void *ptr_b) {
+int cmp(const void *ptr_a, const void *ptr_b) {
   return strcmp(((struct Group *)ptr_a)->key, ((struct Group *)ptr_b)->key);
 }
 
 // finds hash slot in map of key
-static inline unsigned int hash_probe(struct Result *result, const char *restrict key) {
-
+static inline unsigned long hash_probe(struct Result *result, const char *key) {
   // hash key
-  unsigned int h = (unsigned char)key[0];
+  unsigned long h = (unsigned char)key[0];
   unsigned int len = 1;
   for (; key[len] != 0x0; len++) {
     h = (h * 31) + (unsigned char)key[len];
@@ -101,36 +103,33 @@ static void *process_chunk(void *ptr) {
     ch->end++;
   }
 
+  // initialize result
   struct Result *result = malloc(sizeof(*result));
   if (!result) {
     perror("malloc error");
     exit(EXIT_FAILURE);
   }
   result->n = 0;
+  memset(result->hashes, 0, HCAP * sizeof(*result->hashes));
+  memset(result->map, 0, HCAP * sizeof(*result->map));
 
-  memset(result->hashes, 0, HCAP * sizeof(int));
-  memset(result->map, 0, HCAP * sizeof(int));
+  char *s = &ch->data[ch->start];
+  char *end = &ch->data[ch->end];
 
-  const char *s = &ch->data[ch->start];
-  const char *end = &ch->data[ch->end];
-  const char *linestart;
-  unsigned int h;
-  int temperature;
-  int len;
-  unsigned int c;
-
+  // flaming hot loop
   while (s != end) {
-    linestart = s;
+    char *linestart = s;
 
     // hash everything up to ';'
     // assumption: key is at least 1 char
-    len = 1;
-    h = (unsigned char)s[0];
+    unsigned int len = 1;
+    unsigned long h = (unsigned char)s[0];
     while (s[len] != ';') {
       h = (h * 31) + (unsigned char)s[len++];
     }
 
     // parse decimal number as int
+    int temperature;
     s = parse_number(&temperature, s + len + 1);
 
     // probe map until free spot or match
@@ -138,37 +137,38 @@ static void *process_chunk(void *ptr) {
            h != result->hashes[h & (HCAP - 1)]) {
       h++;
     }
-    c = result->map[h & (HCAP - 1)];
+    unsigned int c = result->map[h & (HCAP - 1)];
 
     if (c == 0) {
-      memcpy(result->groups[result->n].key, linestart, (size_t)len);
-      result->groups[result->n].key[len] = 0x0;
-      result->groups[result->n].count = 1;
-      result->groups[result->n].sum = temperature;
-      result->groups[result->n].min = temperature;
-      result->groups[result->n].max = temperature;
-      result->map[h & (HCAP - 1)] = result->n++;
+      /* new entry */
+      unsigned int n = result->n;
+      memcpy(result->groups[result->n].key, linestart, len);
+      result->groups[n].key[len] = 0x0;
+      result->groups[n].count = 1;
+      result->groups[n].min = temperature;
+      result->groups[n].max = temperature;
+      result->groups[n].sum = temperature;
       result->hashes[h & (HCAP - 1)] = h;
+      result->map[h & (HCAP - 1)] = n;
+      result->n++;
     } else {
+      /* existing entry */
       result->groups[c].count += 1;
+      result->groups[c].min = min(result->groups[c].min, temperature);
+      result->groups[c].max = max(result->groups[c].max, temperature);
       result->groups[c].sum += temperature;
-      if (temperature < result->groups[c].min) {
-        result->groups[c].min = temperature;
-      } else if (temperature > result->groups[c].max) {
-        result->groups[c].max = temperature;
-      }
     }
   }
 
   return (void *)result;
 }
 
-void result_to_str(char *dest, const struct Result *result) {
+void result_to_str(char *dest, struct Result *result) {
   char buf[128];
   *dest++ = '{';
   for (unsigned int i = 0; i < result->n; i++) {
-    size_t n = (size_t)sprintf(
-        buf, "%s=%.1f/%.1f/%.1f", result->groups[i].key,
+    size_t n = (size_t)snprintf(
+        buf, 128, "%s=%.1f/%.1f/%.1f", result->groups[i].key,
         (float)result->groups[i].min / 10.0,
         ((float)result->groups[i].sum / (float)result->groups[i].count) / 10.0,
         (float)result->groups[i].max / 10.0);
@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
 
   // mmap entire file into memory
   size_t sz = (size_t)sb.st_size;
-  const char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
+  char *data = mmap(NULL, sz, PROT_READ, MAP_SHARED, fd, 0);
   if (data == MAP_FAILED) {
     perror("error mmapping file");
     exit(EXIT_FAILURE);
@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
   pthread_t workers[NTHREADS];
   struct Chunk chunks[NTHREADS];
   size_t chunk_size = sz / (size_t)NTHREADS;
-  for (int i = 0; i < NTHREADS; i++) {
+  for (unsigned int i = 0; i < NTHREADS; i++) {
     chunks[i].data = data;
     chunks[i].start = chunk_size * (size_t)i;
     chunks[i].end = chunk_size * ((size_t)i + 1);
@@ -224,23 +224,19 @@ int main(int argc, char **argv) {
 
   // wait for all threads to finish
   struct Result *results[NTHREADS];
-  for (int i = 0; i < NTHREADS; i++) {
+  for (unsigned int i = 0; i < NTHREADS; i++) {
     pthread_join(workers[i], (void *)&results[i]);
   }
 
   // merge results
   struct Group *b;
-  unsigned int h;
-  unsigned int c;
   struct Result *result = results[0];
-  for (int i = 1; i < NTHREADS; i++) {
+  for (unsigned int i = 1; i < NTHREADS; i++) {
     for (unsigned int j = 0; j < results[i]->n; j++) {
       b = &results[i]->groups[j];
-      h = hash_probe(result, b->key);
-
-      // TODO: Refactor lines below, we can share some logic with process_chunk
-      c = result->map[h & (HCAP - 1)];
-      if (c >= 0) {
+      unsigned long h = hash_probe(result, b->key);
+      unsigned int c = result->map[h & (HCAP - 1)];
+      if (c > 0) {
         result->groups[c].count += b->count;
         result->groups[c].sum += b->sum;
         result->groups[c].min = min(result->groups[c].min, b->min);
@@ -268,7 +264,7 @@ int main(int argc, char **argv) {
   // clean-up
   munmap((void *)data, sz);
   close(fd);
-  for (int i = 0; i < NTHREADS; i++) {
+  for (unsigned int i = 0; i < NTHREADS; i++) {
     free(results[i]);
   }
   exit(EXIT_SUCCESS);
