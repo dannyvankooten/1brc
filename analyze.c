@@ -41,23 +41,14 @@ struct Result {
   struct Group groups[MAX_DISTINCT_GROUPS];
 };
 
-struct Chunk {
-  size_t start;
-  size_t end;
-  char *data;
-};
-
 // parses a floating point number as an integer
 // this is only possible because we know our data file has only a single decimal
-__attribute((always_inline)) static inline char *parse_number(int *dest,
-                                                              char *s) {
+static inline const char *parse_number(int *dest, const char *s) {
   // parse sign
-  int mod;
+  int mod = 1;
   if (*s == '-') {
     mod = -1;
     s++;
-  } else {
-    mod = 1;
   }
 
   if (s[1] == '.') {
@@ -69,13 +60,8 @@ __attribute((always_inline)) static inline char *parse_number(int *dest,
   return s + 5;
 }
 
-__attribute((always_inline)) static inline int min(int a, int b) {
-  return a < b ? a : b;
-}
-
-__attribute((always_inline)) static inline int max(int a, int b) {
-  return a > b ? a : b;
-}
+static inline int min(int a, int b) { return a < b ? a : b; }
+static inline int max(int a, int b) { return a > b ? a : b; }
 
 // qsort callback
 static inline int cmp(const void *ptr_a, const void *ptr_b) {
@@ -84,11 +70,10 @@ static inline int cmp(const void *ptr_a, const void *ptr_b) {
 
 // returns a pointer to the slot in our hashmap
 // for storing the index in our results array
-__attribute((always_inline)) static inline unsigned int *
-hashmap_entry(struct Result *result, const char *key) {
-  // hash key
-  unsigned long h = (unsigned char)key[0];
-  unsigned int len = 1;
+static inline unsigned int *hashmap_entry(struct Result *result,
+                                          const char *key) {
+  unsigned int h = 0;
+  unsigned int len = 0;
   for (; key[len] != '\0'; len++) {
     h = (h * 31) + (unsigned char)key[len];
   }
@@ -122,25 +107,29 @@ static void *process_chunk(void *_data) {
 
   // keep grabbing chunks until done
   while (1) {
-    unsigned int chunk = chunk_selector++;
+    const unsigned int chunk = chunk_selector++;
     if (chunk >= chunk_count) {
       break;
     }
     size_t chunk_start = chunk * chunk_size;
     size_t chunk_end = chunk_start + chunk_size;
-    char *s = chunk_start > 0 ? strchr(&data[chunk_start], '\n') : &data[chunk_start];
+
+    // skip forward to next newline in chunk
+    const char *s = chunk_start > 0
+                  ? (char *)memchr(&data[chunk_start], '\n', chunk_size) + 1
+                  : &data[chunk_start];
 
     // this assumes the file ends in a newline...
-    char *end = strchr(&data[chunk_end], '\n') + 1;
+    const char *end = (char *)memchr(&data[chunk_end], '\n', chunk_size) + 1;
 
     // flaming hot loop
     while (s != end) {
-      char *linestart = s;
+      const char *linestart = s;
 
-      // hash everything up to ';'
-      // assumption: key is at least 1 char
-      unsigned int len = 1;
-      unsigned long h = (unsigned char) (s[0]);
+      // find position of ;
+      // while simulatenuously hashing everything up to that point
+      unsigned int len = 0;
+      unsigned int h = 0;
       while (s[len] != ';') {
         h = (h * 31) + (unsigned char)s[len];
         len += 1;
@@ -148,34 +137,34 @@ static void *process_chunk(void *_data) {
 
       // parse decimal number as int
       int temperature;
-      s = parse_number(&temperature, s + len + 1);
+      s = parse_number(&temperature, linestart + len + 1);
 
       // probe map until free spot or match
-      unsigned int c = result->map[HASHMAP_INDEX(h)];
-      while (c > 0 && memcmp(result->groups[c].key, linestart, len) != 0) {
-        c = result->map[HASHMAP_INDEX(++h)];
+      unsigned int *c = &result->map[HASHMAP_INDEX(h)];
+      while (*c > 0 && memcmp(result->groups[*c].key, linestart, len) != 0) {
+        h += 1;
+        c = &result->map[HASHMAP_INDEX(h)];
       }
 
-      if (c == 0) {
-        // new entry
-        c = result->n;
-        memcpy(result->groups[result->n].key, linestart, len);
-        result->map[HASHMAP_INDEX(h)] = c;
+      // new hashmap entry
+      if (*c == 0) {
+        *c = result->n;
+        memcpy(result->groups[*c].key, linestart, len);
         result->n++;
       }
 
       // existing entry
-      result->groups[c].count += 1;
-      result->groups[c].min = min(result->groups[c].min, temperature);
-      result->groups[c].max = max(result->groups[c].max, temperature);
-      result->groups[c].sum += temperature;
+      result->groups[*c].count += 1;
+      result->groups[*c].min = min(result->groups[*c].min, temperature);
+      result->groups[*c].max = max(result->groups[*c].max, temperature);
+      result->groups[*c].sum += temperature;
     }
   }
 
   return (void *)result;
 }
 
-void result_to_str(char *dest, struct Result *result) {
+static void result_to_str(char *dest, const struct Result *result) {
   char buf[128];
   *dest++ = '{';
   for (unsigned int i = 0; i < result->n; i++) {
@@ -183,8 +172,7 @@ void result_to_str(char *dest, struct Result *result) {
         buf, 128, "%s=%.1f/%.1f/%.1f%s", result->groups[i].key,
         (float)result->groups[i].min / 10.0,
         ((float)result->groups[i].sum / (float)result->groups[i].count) / 10.0,
-        (float)result->groups[i].max / 10.0,
-        i < (result->n-1) ? ", " : "");
+        (float)result->groups[i].max / 10.0, i < (result->n - 1) ? ", " : "");
 
     memcpy(dest, buf, n);
     dest += n;
@@ -194,10 +182,13 @@ void result_to_str(char *dest, struct Result *result) {
 }
 
 int main(int argc, char **argv) {
+  // set-up pipes for communication
+  // then fork into child process which does the actual work
+  // this allows us to skip the time the system spends doing munmap
   int pipefd[2];
   if (pipe(pipefd) != 0) {
     perror("pipe error");
-    return EXIT_FAILURE;
+    exit(EXIT_FAILURE);
   }
   pid_t pid;
   pid = fork();
@@ -211,7 +202,7 @@ int main(int argc, char **argv) {
     }
     printf("%s", buf);
     close(pipefd[0]);
-    return EXIT_SUCCESS;
+    exit(EXIT_FAILURE);
   }
 
   // close unused read pipe
@@ -263,24 +254,20 @@ int main(int argc, char **argv) {
       struct Group *b = &results[i]->groups[j];
       unsigned int *hm_entry = hashmap_entry(result, b->key);
       unsigned int c = *hm_entry;
-      if (c > 0) {
-        result->groups[c].count += b->count;
-        result->groups[c].sum += b->sum;
-        result->groups[c].min = min(result->groups[c].min, b->min);
-        result->groups[c].max = max(result->groups[c].max, b->max);
-      } else {
-        strcpy(result->groups[result->n].key, b->key);
-        result->groups[result->n].count = b->count;
-        result->groups[result->n].sum = b->sum;
-        result->groups[result->n].min = b->min;
-        result->groups[result->n].max = b->max;
-        *hm_entry = result->n++;
+      if (c == 0) {
+        c = result->n++;
+        *hm_entry = c;
+        strcpy(result->groups[c].key, b->key);
       }
+      result->groups[c].count += b->count;
+      result->groups[c].sum += b->sum;
+      result->groups[c].min = min(result->groups[c].min, b->min);
+      result->groups[c].max = max(result->groups[c].max, b->max);
     }
   }
 
   // sort results alphabetically
-  qsort(result->groups, (size_t)result->n, sizeof(struct Group), cmp);
+  qsort(result->groups, (size_t)result->n, sizeof(*result->groups), cmp);
 
   // prepare output string
   char buf[(1 << 10) * 16];
