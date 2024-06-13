@@ -23,6 +23,8 @@
 #define NTHREADS 16
 #endif
 
+#define BUFSIZE ((1<<10)*16)
+
 static size_t chunk_count;
 static size_t chunk_size;
 static atomic_uint chunk_selector;
@@ -195,9 +197,8 @@ int main(int argc, char **argv) {
   if (pid > 0) {
     // close write pipe
     close(pipefd[1]);
-    size_t sz = (1 << 10) * 16;
-    char buf[sz];
-    if (-1 == read(pipefd[0], &buf, sz)) {
+    char buf[BUFSIZE];
+    if (-1 == read(pipefd[0], &buf, BUFSIZE)) {
       perror("read error");
     }
     printf("%s", buf);
