@@ -13,8 +13,21 @@ I wrote up some implmentation details on my blog here: https://www.dannyvankoote
 
 First, compile the two programs using any capable C-compiler.
 
-```
+```sh
 make
+```
+
+To compile in debug mode:
+
+```sh
+DEBUG=1 make
+```
+
+By default, Make will attempt to find the number of threads to use from `nproc`
+or `sysctl`. To compile while specifying the number of threads to use explicitly:
+
+```sh
+NTHREADS=8 make
 ```
 
 ### Create the measurements file with 1B rows

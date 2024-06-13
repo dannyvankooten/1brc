@@ -167,20 +167,21 @@ static void *process_chunk(void *_data) {
 }
 
 static void result_to_str(char *dest, const struct Result *result) {
-  char buf[128];
   *dest++ = '{';
+
   for (unsigned int i = 0; i < result->n; i++) {
-    size_t n = (size_t)snprintf(
-        buf, 128, "%s=%.1f/%.1f/%.1f%s", result->groups[i].key,
+    size_t n = (size_t)sprintf(
+        dest, "%s=%.1f/%.1f/%.1f%s", result->groups[i].key,
         (float)result->groups[i].min / 10.0,
         ((float)result->groups[i].sum / (float)result->groups[i].count) / 10.0,
         (float)result->groups[i].max / 10.0, i < (result->n - 1) ? ", " : "");
 
-    memcpy(dest, buf, n);
     dest += n;
   }
+
   *dest++ = '}';
-  *dest = 0x0;
+  *dest++ = '\n';
+  *dest = '\0';
 }
 
 int main(int argc, char **argv) {

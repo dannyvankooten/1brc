@@ -2,13 +2,13 @@ ifndef NTHREADS
 NTHREADS=$(shell nproc --all 2>/dev/null || sysctl -n hw.logicalcpu)
 endif
 
-CFLAGS+=-std=c11 -O2 -m64 -march=native -mtune=native -flto
+CFLAGS=-std=c11 -O2 -m64 -march=native -mtune=native -flto
 CFLAGS+=-Wall -Wextra -Wconversion -Wformat -Wformat=2 -Wimplicit-fallthrough -Wvla
 CFLAGS+=-DNTHREADS=$(NTHREADS)
 
 ifdef DEBUG
 CFLAGS+=-g -fno-omit-frame-pointer -fsanitize=address,undefined -fstack-protector-strong -fstack-clash-protection
-CFLAGS+=-O1 -D_FORTIFY_SOURCE=3
+CFLAGS+=-D_FORTIFY_SOURCE=3
 endif
 
 all: bin/ bin/create-sample bin/analyze
