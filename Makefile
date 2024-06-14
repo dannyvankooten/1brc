@@ -26,6 +26,12 @@ bin/create-sample: create-sample.c
 bin/analyze: analyze.c
 	$(CC) $(CFLAGS) $^ -o $@
 
+bin/hash: hash.c
+	$(CC) $(CFLAGS) $^ -o $@
+
+bin/memory_bandwidth: memory_bandwidth.c
+	$(CC) $(CFLAGS) -std=gnu17 $^ -o $@
+
 .PHONY: clean
 clean:
 	rm -r bin/

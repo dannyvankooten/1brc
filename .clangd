@@ -1,2 +1,2 @@
 CompileFlags:
-  Add: [ -std=c17, -Wall, -Wextra, -Wpedantic ]
+  Add: [ -std=gnu17, -Wall, -Wextra, -Wpedantic ]

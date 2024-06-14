@@ -2,6 +2,7 @@ bin/
 perf.data*
 a.out
 hash
+memory_bandwidth
 naive
 analyze
 *.txt
