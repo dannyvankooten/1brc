@@ -1,11 +1,10 @@
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <stdlib.h>
 
-char *city_names[] = {
+const char *city_names[] = {
   "Abha",
   "Abidjan",
   "Abéché",
@@ -421,7 +420,7 @@ char *city_names[] = {
   "Zürich",
 };
 
-uint64_t fnv1a(char *key) {
+uint64_t fnv1a(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
     h *= 0x811C9DC5;
@@ -431,7 +430,7 @@ uint64_t fnv1a(char *key) {
   return h;
 }
 
-uint64_t djb2(char *key) {
+uint64_t djb2(const char *key) {
   uint64_t h = 5381;
   while (*key != 0) {
     h <<= 5;
@@ -442,7 +441,7 @@ uint64_t djb2(char *key) {
   return h;
 }
 
-uint64_t sdbm(char *key) {
+uint64_t sdbm(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
     h = (unsigned char)*key + (h << 6) + (h << 16) - h;
@@ -451,43 +450,47 @@ uint64_t sdbm(char *key) {
   return h;
 }
 
-uint64_t m31(char *key) {
+uint64_t m31(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
-    h = (h * 31) + ((unsigned char)*key);
+    h *= 31;
+    h += (unsigned char)*key;
     key++;
   }
   return h;
 }
 
-uint64_t m31s(char *key) {
+uint64_t m31s(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
-    h = (h * 31) + ((unsigned char)*key - 'A');
+    h *= 32;
+    h += (unsigned char)*key - 'A';
     key++;
   }
   return h;
 }
 
-uint64_t m32(char *key) {
+uint64_t m32(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
-    h = (h * 32) + ((unsigned char)*key - 'A');
+    h *= 32;
+    h += (unsigned char)*key;
     key++;
   }
   return h;
 }
 
-uint64_t mz(char *key) {
+uint64_t mz(const char *key) {
   uint64_t h = 0;
   while (*key != 0) {
-    h = (h * 'z') + ((unsigned char) *key - 'A');
+    h *= 'z' - 'A';
+    h += (unsigned char)*key - 'A';
     key++;
   }
   return h;
 }
 
-uint64_t adler32(char *key) {
+uint64_t adler32(const char *key) {
   uint64_t h1 = 0;
   uint64_t h2 = 0;
   while (*key != 0) {
@@ -498,7 +501,7 @@ uint64_t adler32(char *key) {
   return (h2 << 16) | h1;
 }
 
-uint64_t rshash(char* key)
+uint64_t rshash(const char* key)
 {
   uint64_t hash = 0;
 
@@ -516,9 +519,9 @@ uint64_t rshash(char* key)
 int main(void) {
   size_t ncities = sizeof(city_names) / sizeof(city_names[0]);
 
-  struct hash_function {
+  struct {
     char *name;
-    uint64_t (*function)(char *);
+    uint64_t (*function)(const char *);
   } hash_functions[] = {
     {
       "fnv1a",
@@ -553,7 +556,7 @@ int main(void) {
       &rshash,
     },
   };
-  size_t nhash_functions = sizeof(hash_functions) / sizeof(hash_functions[0]);
+  const size_t nhash_functions = sizeof(hash_functions) / sizeof(hash_functions[0]);
 
   for (unsigned int f = 0; f < nhash_functions; f++) {
     printf("%s\n", hash_functions[f].name);
@@ -562,8 +565,8 @@ int main(void) {
     for (unsigned int cap = 512; cap < 512 << 6; cap <<= 1) {
       char *map = malloc(sizeof(char) * cap);
       memset(map, 0, cap * sizeof(char));
-      int collisions = 0;
-      clock_t start = clock();
+      unsigned int collisions = 0;
+      clock_t time_start = clock();
 
       for (unsigned int c = 0; c < ncities; c++) {
         uint64_t slot = hash_functions[f].function(city_names[c]) % cap;
@@ -574,7 +577,8 @@ int main(void) {
         }
       }
 
-      printf("%% %5d:    %.2f    %ld ns\n", cap, (double)collisions / (double)ncities, ((clock() - start) * 1000000 / CLOCKS_PER_SEC));
+      long time_elapsed = ((clock() - time_start) * 1000000 / CLOCKS_PER_SEC);
+      printf("%% %5d:    %.2f    %ld ns\n", cap, (double)collisions / (double)ncities, time_elapsed);
       free(map);
     }
 

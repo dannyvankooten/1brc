@@ -11,14 +11,10 @@ CFLAGS+=-g -fno-omit-frame-pointer -fsanitize=address,undefined -fstack-protecto
 CFLAGS+=-D_FORTIFY_SOURCE=3
 endif
 
-all: bin/ bin/create-sample bin/analyze
+all: bin/ bin/create-sample bin/analyze bin/hash bin/memory_bandwidth
 
 bin/:
 	mkdir -p bin/
-
-.PHONY: profile
-profile: bin/analyze
-	perf record --call-graph dwarf bin/analyze measurements-1M.txt
 
 bin/create-sample: create-sample.c
 	$(CC) $(CFLAGS) $^ -lm -o $@

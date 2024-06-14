@@ -4,7 +4,9 @@
 #include <string.h>
 #include <time.h>
 
-#define PI 3.141592654
+#ifndef M_PI
+  #define M_PI   3.14159265358979323846  /* pi */
+#endif
 
 struct {
   char *city;
@@ -433,9 +435,9 @@ double rand_nd(double mean, double stddev) {
   if (phase == 0) {
     U = (rand() + 1.) / (RAND_MAX + 2.);
     V = rand() / (RAND_MAX + 1.);
-    Z = sqrt(-2 * log(U)) * sin(2 * PI * V);
+    Z = sqrt(-2 * log(U)) * sin(2 * M_PI * V);
   } else {
-    Z = sqrt(-2 * log(U)) * cos(2 * PI * V);
+    Z = sqrt(-2 * log(U)) * cos(2 * M_PI * V);
   }
   phase = 1 - phase;
 
@@ -444,17 +446,16 @@ double rand_nd(double mean, double stddev) {
 
 int main(int argc, char **argv) {
   if (argc <= 1) {
-    printf("usage: create-sample <amount>\n");
-    exit(EXIT_SUCCESS);
-  }
-
-  FILE *fh = fopen("measurements.txt", "w");
-  if (!fh) {
-    printf("error creating file\n");
-    exit(EXIT_FAILURE);
+    fprintf(stderr, "usage: create-sample <amount>\n");
+    return EXIT_FAILURE;
   }
 
   clock_t tstart = clock();
+  FILE *fh = fopen("measurements.txt", "w");
+  if (!fh) {
+    perror("error opening file for writing");
+    return EXIT_FAILURE;
+  }
 
   long n = strtol(argv[1], NULL, 10);
   int ncities = sizeof(data) / sizeof(data[0]);
@@ -467,4 +468,5 @@ int main(int argc, char **argv) {
   fclose(fh);
   printf("Created %ld measurements in %f ms\n", n,
          (double)(clock() - tstart) * 1000 / (double)CLOCKS_PER_SEC);
+  return EXIT_SUCCESS;
 }
