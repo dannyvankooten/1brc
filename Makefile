@@ -2,7 +2,7 @@ ifndef NTHREADS
 NTHREADS=$(shell nproc --all 2>/dev/null || sysctl -n hw.logicalcpu)
 endif
 
-CFLAGS=-std=c11 -O2 -m64 -march=native -mtune=native -flto
+CFLAGS=-std=c17 -O2 -m64 -march=native -mtune=native -flto
 CFLAGS+=-Wall -Wextra -Wconversion -Wformat -Wformat=2 -Wimplicit-fallthrough -Wvla
 CFLAGS+=-DNTHREADS=$(NTHREADS)
 

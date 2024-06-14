@@ -7,7 +7,6 @@ analyze
 *.txt
 
 # playing with hash functions
-hash.c
 hashes.txt
 
 1
